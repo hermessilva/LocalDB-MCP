@@ -18,24 +18,24 @@ const PIPE_BUSY_MAX_ATTEMPTS: u32 = 20;
 
 #[derive(Debug, Error)]
 pub enum SqlError {
-    #[error("falha ao conectar no named pipe '{pipe}': {source}")]
+    #[error("failed to connect to named pipe '{pipe}': {source}")]
     PipeConnect {
         pipe: String,
         #[source]
         source: std::io::Error,
     },
-    #[error("erro do driver TDS: {0}")]
+    #[error("TDS driver error: {0}")]
     Tiberius(#[from] tiberius::error::Error),
-    #[error("statement não é somente leitura — use sql_execute_statement/sql_execute_script")]
+    #[error("statement is not read-only — use sql_execute_statement/sql_execute_script")]
     NotReadOnly,
-    #[error("ação destrutiva requer confirm=true nos batches: {0:?}")]
+    #[error("destructive action requires confirm=true on batches: {0:?}")]
     ConfirmationRequired(Vec<usize>),
 }
 
 pub type Result<T> = std::result::Result<T, SqlError>;
 
-/// Converte o pipe name no formato TDS (`np:\\.\pipe\...`) pro formato
-/// aceito pela API Win32 de named pipe (sem o prefixo `np:`).
+/// Converts the pipe name from TDS format (`np:\\.\pipe\...`) to the
+/// format accepted by the Win32 named pipe API (without the `np:` prefix).
 fn to_win32_pipe_path(tds_pipe_name: &str) -> &str {
     tds_pipe_name.strip_prefix("np:").unwrap_or(tds_pipe_name)
 }
@@ -62,7 +62,7 @@ async fn open_pipe(pipe_name: &str) -> Result<NamedPipeClient> {
         pipe: path.to_string(),
         source: std::io::Error::new(
             std::io::ErrorKind::TimedOut,
-            "pipe ocupado (ERROR_PIPE_BUSY) após retries",
+            "pipe busy (ERROR_PIPE_BUSY) after retries",
         ),
     })
 }
@@ -73,10 +73,10 @@ pub async fn connect(pipe_name: &str, database: Option<&str>) -> Result<TdsClien
     let mut config = Config::new();
     config.authentication(AuthMethod::Integrated);
     config.trust_cert();
-    // LocalDB via named pipe é um canal local já confiado pelo SO (ACL do
-    // próprio pipe); TLS na camada TDS não é suportado nesse cenário e a
-    // negociação padrão (`Required`) falha com "No process is on the other
-    // end of the pipe".
+    // LocalDB via named pipe is a local channel already trusted by the OS
+    // (the pipe's own ACL); TLS at the TDS layer isn't supported in this
+    // scenario and the default negotiation (`Required`) fails with "No
+    // process is on the other end of the pipe".
     config.encryption(tiberius::EncryptionLevel::NotSupported);
     if let Some(db) = database {
         config.database(db);
@@ -86,8 +86,8 @@ pub async fn connect(pipe_name: &str, database: Option<&str>) -> Result<TdsClien
     Ok(client)
 }
 
-/// Separa um script T-SQL em batches por `GO` em linha própria (case
-/// insensitive), como o SSMS/sqlcmd fazem.
+/// Splits a T-SQL script into batches on `GO` on its own line (case
+/// insensitive), the way SSMS/sqlcmd do.
 pub fn split_batches(script: &str) -> Vec<String> {
     let mut batches = Vec::new();
     let mut current = String::new();
@@ -132,14 +132,14 @@ fn destructive_batch_indices(batches: &[String]) -> Vec<usize> {
         .collect()
 }
 
-/// Roda um script multi-batch na mesma conexão/sessão (necessário pra `GO`
-/// se comportar como no SSMS, com `SET` de sessão persistindo entre
-/// batches). Se qualquer batch for destrutivo e `confirm != true`, nada é
-/// executado.
+/// Runs a multi-batch script on the same connection/session (needed for
+/// `GO` to behave like it does in SSMS, with session `SET` state
+/// persisting across batches). If any batch is destructive and
+/// `confirm != true`, nothing gets executed.
 ///
-/// `messages` fica sempre vazio nesta versão: capturar mensagens `PRINT`
-/// exige lidar com tokens de baixo nível do stream TDS que o tiberius não
-/// expõe por API pública — ver docs/PLANNING.md Fase 2.
+/// `messages` is always empty in this version: capturing `PRINT` messages
+/// requires handling low-level TDS stream tokens that tiberius doesn't
+/// expose through a public API — see docs/PLANNING.md Phase 2.
 pub async fn execute_script(
     pipe_name: &str,
     database: &str,
@@ -177,7 +177,7 @@ pub async fn execute_script(
     Ok(results)
 }
 
-/// Statement único DML/DDL. Mesmo guard de confirmação de `execute_script`.
+/// Single DML/DDL statement. Same confirmation guard as `execute_script`.
 pub async fn execute_statement(
     pipe_name: &str,
     database: &str,
@@ -213,7 +213,7 @@ pub struct QueryResult {
     pub truncated: bool,
 }
 
-/// Só aceita statements classificados `ReadOnly` (ver `security::classify`).
+/// Only accepts statements classified as `ReadOnly` (see `security::classify`).
 pub async fn execute_query(
     pipe_name: &str,
     database: &str,

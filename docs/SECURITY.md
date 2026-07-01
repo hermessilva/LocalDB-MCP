@@ -1,65 +1,65 @@
-# Modelo de segurança — mssql-localdb-mcp
+# Security model — mssql-localdb-mcp
 
-## 1. Modelo de ameaça
+## 1. Threat model
 
-Servidor MCP local, roda com os privilégios do usuário Windows que o invocou (o mesmo client MCP — Claude Desktop/Code — está rodando na mesma sessão). Não há autenticação de rede: o servidor confia no client MCP que o invocou via stdio, como qualquer servidor MCP local.
+A local MCP server, running with the privileges of the Windows user who invoked it (the same session where the MCP client — Claude Desktop/Code — is running). There's no network authentication: the server trusts the MCP client that invoked it over stdio, like any local MCP server.
 
-Riscos principais não vêm de rede, vêm de:
-1. **Agente de IA gerando SQL destrutivo sem intenção clara do usuário** (alucinação, prompt injection via dado lido de uma tabela, instrução ambígua).
-2. **Agente varrendo/lendo arquivos fora do escopo pretendido** via `db_scan_folder`/`db_attach`.
-3. **Escalada de privilégio dentro do próprio LocalDB**: LocalDB dá `sysadmin` ao usuário que cria a instância por padrão — o servidor herda esse nível dentro do banco.
+The main risks don't come from the network, they come from:
+1. **AI agent generating destructive SQL without clear user intent** (hallucination, prompt injection via data read from a table, ambiguous instruction).
+2. **Agent scanning/reading files outside the intended scope** via `db_scan_folder`/`db_attach`.
+3. **Privilege escalation inside LocalDB itself**: LocalDB grants `sysadmin` to the user who creates the instance by default — the server inherits that level inside the database.
 
-Fora de escopo (não é o servidor que resolve):
-- Comprometimento da máquina do usuário (se o atacante já tem code execution local, MCP não é a superfície relevante).
-- Ataque de rede — não há listener de rede, transporte é stdio.
+Out of scope (not something the server solves):
+- Compromise of the user's machine (if an attacker already has local code execution, MCP isn't the relevant surface).
+- Network attack — there's no network listener, transport is stdio.
 
-## 2. Guardrails implementados
+## 2. Implemented guardrails
 
-### 2.1 Confirmação explícita pra ação destrutiva
+### 2.1 Explicit confirmation for destructive actions
 `security::classify(sql: &str) -> RiskLevel`:
-- `ReadOnly`: `SELECT` puro (sem `INTO`), sem side-effect.
-- `Destructive`: `DROP`, `TRUNCATE`, `ALTER`, `DELETE`, `UPDATE` sem `WHERE`, `DELETE`/`UPDATE` com `WHERE` sempre presente mas ainda marcado destrutivo (não tenta avaliar "quão destrutivo", qualquer DML/DDL de escrita é destrutivo por padrão), `CREATE DATABASE ... FOR ATTACH` não é destrutivo (é aditivo), `DROP DATABASE` é.
+- `ReadOnly`: plain `SELECT` (no `INTO`), no side effects.
+- `Destructive`: `DROP`, `TRUNCATE`, `ALTER`, `DELETE`, `UPDATE` without `WHERE`, `DELETE`/`UPDATE` with `WHERE` always present but still marked destructive (doesn't try to assess "how destructive" — any write DML/DDL is destructive by default), `CREATE DATABASE ... FOR ATTACH` is not destructive (it's additive), `DROP DATABASE` is.
 
-Toda tool que executa SQL não-`SELECT` exige `confirm: true` no input quando o resultado da classificação é `Destructive`. Sem esse flag, a tool retorna `CONFIRMATION_REQUIRED` e **não executa nada** — nem parcialmente.
+Every tool that runs non-`SELECT` SQL requires `confirm: true` in its input when the classification result is `Destructive`. Without that flag, the tool returns `CONFIRMATION_REQUIRED` and **executes nothing** — not even partially.
 
-v1 usa regex/keyword matching (rápido de implementar, cobre os casos comuns). Falso-negativo conhecido: SQL ofuscado/dinâmico dentro de string (`EXEC('DELETE FROM...')`) pode escapar detecção por regex. Fase 2 migra pra `sqlparser-rs` (parse real do AST) especificamente pra fechar esse gap — não é um "nice to have", é a razão da migração.
+v1 uses regex/keyword matching (fast to implement, covers the common cases). Known false negative: obfuscated/dynamic SQL inside a string (`EXEC('DELETE FROM...')`) can escape regex detection. Phase 2 migrates to `sqlparser-rs` (real AST parsing) specifically to close that gap — it's not a "nice to have", it's the reason for the migration.
 
-Isso **não é um sandbox** — é um freio de fricção. O agente (ou o usuário através do agente) ainda pode confirmar e executar qualquer coisa. O objetivo é evitar execução acidental, não impedir uso malicioso deliberado por quem já tem acesso legítimo.
+This is **not a sandbox** — it's a friction brake. The agent (or the user through the agent) can still confirm and run anything. The goal is to prevent accidental execution, not to block deliberate malicious use by someone who already has legitimate access.
 
-### 2.2 Allowlist de pastas pro scan
-`config.scan_allowlist` é obrigatório e vazio por padrão — `db_scan_folder` recusa rodar até o usuário configurar explicitamente quais raízes podem ser varridas. Nunca há fallback "varre tudo se não configurado".
+### 2.2 Folder scan allowlist
+`config.scan_allowlist` is mandatory and empty by default — `db_scan_folder` refuses to run until the user explicitly configures which roots can be scanned. There's never a "scan everything if unconfigured" fallback.
 
 `security::validate_path`:
-- Canonicaliza o path recebido (resolve `..`, links).
-- Confere que o resultado tem como prefixo alguma entrada da allowlist.
-- Rejeita paths fora disso com `PATH_NOT_ALLOWED`, sem detalhar estrutura de diretório fora da allowlist na mensagem de erro (evita vazar informação de path via mensagem de erro).
+- Canonicalizes the received path (resolves `..`, links).
+- Checks that the result has some allowlist entry as a prefix.
+- Rejects paths outside that with `PATH_NOT_ALLOWED`, without detailing the directory structure outside the allowlist in the error message (avoids leaking path information via the error message).
 
-`db_attach` usa a mesma validação pro `mdf_path` — não dá pra anexar banco de fora da allowlist mesmo que o path venha de outra fonte (ex: sugerido pelo próprio agente).
+`db_attach` uses the same validation for `mdf_path` — you can't attach a database from outside the allowlist even if the path comes from another source (e.g. suggested by the agent itself).
 
-Scan tem profundidade máxima configurável e ignora por padrão `node_modules`, `.git`, `bin`, `obj` (evita custo e ruído).
+The scan has a configurable max depth and ignores `node_modules`, `.git`, `bin`, `obj` by default (avoids cost and noise).
 
-### 2.3 Sem SQL Authentication
-Servidor só conecta via Windows Integrated Authentication (o modelo nativo do LocalDB). Não existe campo de senha em nenhuma tool, config ou log. Isso elimina uma classe inteira de risco (secret em log, secret em config file, secret em mensagem de erro).
+### 2.3 No SQL Authentication
+The server only connects via Windows Integrated Authentication (LocalDB's native model). There's no password field in any tool, config, or log. This eliminates an entire class of risk (secret in a log, secret in a config file, secret in an error message).
 
-### 2.4 Timeout e limite de linhas por padrão
-Toda query tem timeout (`config.default_query_timeout_secs`) e `sql_execute_query` tem `max_rows` default — evita o agente travar a instância com query sem `TOP`/`WHERE` em tabela grande, e evita estourar contexto do agente com resultado gigante (retorna `truncated: true` quando corta).
+### 2.4 Timeout and row limit by default
+Every query has a timeout (`config.default_query_timeout_secs`), and `sql_execute_query` has a default `max_rows` — prevents the agent from locking up the instance with a `TOP`/`WHERE`-less query on a large table, and prevents blowing up the agent's context with a giant result (returns `truncated: true` when it cuts off).
 
-### 2.5 Audit log (Fase 2)
-Todo `sql_execute_*` grava em `%APPDATA%\mssql-localdb-mcp\audit\*.jsonl`: timestamp, tool, instância, database, hash SHA-256 do SQL (não o conteúdo — evita duplicar dado sensível no log), classificação de risco, resultado resumido (sucesso/erro, rows_affected). Serve pra auditoria pós-fato, não pra bloqueio em tempo real.
+### 2.5 Audit log (Phase 2)
+Every `sql_execute_*` writes to `%APPDATA%\mssql-localdb-mcp\audit\*.jsonl`: timestamp, tool, instance, database, SHA-256 hash of the SQL (not the content — avoids duplicating sensitive data in the log), risk classification, summarized result (success/error, rows_affected). Serves post-hoc auditing, not real-time blocking.
 
-### 2.6 Mensagens de erro sem vazamento
-Erro `SQL_ERROR` preserva a mensagem original do SQL Server em `data` (útil pro agente corrigir a query), mas nunca inclui stack trace do Rust nem caminho de arquivo interno do servidor. `PATH_NOT_ALLOWED` não ecoa a allowlist completa (evita reconhecimento de estrutura de disco por tentativa e erro).
+### 2.6 Error messages without leakage
+The `SQL_ERROR` error preserves the original SQL Server message in `data` (useful for the agent to fix the query), but never includes a Rust stack trace or the server's internal file paths. `PATH_NOT_ALLOWED` doesn't echo the full allowlist (avoids disk-structure reconnaissance by trial and error).
 
-## 3. Riscos aceitos e documentados (não resolvidos pelo servidor)
+## 3. Accepted and documented risks (not solved by the server)
 
-- **`sysadmin` por padrão na instância criada pelo usuário**: comportamento nativo do LocalDB, não algo que o servidor MCP controla. Documentar no README como risco conhecido; usuário que precisa de least-privilege real deve criar login específico manualmente e usar esse contexto — fora do escopo v1 (não há suporte a impersonation/login customizado).
-- **Prompt injection via dado lido do banco**: se uma tabela contém texto malicioso que o agente lê via `sql_execute_query` e depois interpreta como instrução, isso é um risco do modelo/agente, não algo que o servidor MCP consegue filtrar de forma confiável. Mitigação parcial: guardrail de `confirm` continua exigido pra qualquer ação subsequente destrutiva, então o pior caso ainda para na confirmação.
-- **Confiança no client MCP**: se o client MCP em si estiver comprometido, ele pode simplesmente mandar `confirm: true` sempre. O guardrail assume um client MCP honesto que expõe a confirmação pro usuário real (é assim que Claude Desktop/Code funcionam) — não é proteção contra client malicioso.
+- **`sysadmin` by default on the instance the user creates**: native LocalDB behavior, not something the MCP server controls. Documented in the README as a known risk; a user who needs real least-privilege should manually create a specific login and use that context — out of scope for v1 (no support for impersonation/custom logins).
+- **Prompt injection via data read from the database**: if a table contains malicious text that the agent reads via `sql_execute_query` and later interprets as an instruction, that's a model/agent risk, not something the MCP server can reliably filter. Partial mitigation: the `confirm` guardrail is still required for any subsequent destructive action, so the worst case still stops at confirmation.
+- **Trust in the MCP client**: if the MCP client itself is compromised, it can simply always send `confirm: true`. The guardrail assumes an honest MCP client that surfaces the confirmation to the real user (that's how Claude Desktop/Code work) — it's not protection against a malicious client.
 
-## 4. Checklist de revisão de segurança (rodar antes de cada release)
+## 4. Security review checklist (run before every release)
 
-- [ ] Nenhuma tool nova de escrita/DDL sem passar por `security::classify` + guard de `confirm`.
-- [ ] Nenhum path novo aceito por tool sem passar por `security::validate_path` quando aplicável.
-- [ ] `cargo audit` limpo (sem CVE conhecida em dependência).
-- [ ] Nenhum log/mensagem de erro novo vazando conteúdo de config, path fora de escopo, ou stack trace.
-- [ ] `docs/SECURITY.md` atualizado se o modelo de ameaça mudou (ex: se algum dia suportar transporte de rede, este documento precisa de seção nova inteira).
+- [ ] No new write/DDL tool bypasses `security::classify` + the `confirm` guard.
+- [ ] No new path accepted by a tool bypasses `security::validate_path` where applicable.
+- [ ] `cargo audit` clean (no known CVE in a dependency).
+- [ ] No new log/error message leaks config content, out-of-scope paths, or a stack trace.
+- [ ] `docs/SECURITY.md` updated if the threat model changed (e.g. if a network transport is ever supported, this document needs a whole new section).

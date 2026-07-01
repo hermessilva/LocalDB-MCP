@@ -1,91 +1,91 @@
-# Arquitetura — mssql-localdb-mcp
+# Architecture — mssql-localdb-mcp
 
-## 1. Visão geral do processo
+## 1. Process overview
 
 ```
-Client MCP (Claude Desktop/Code, etc.)
-        │  stdio (JSON-RPC via stdin/stdout)
+MCP client (Claude Desktop/Code, etc.)
+        │  stdio (JSON-RPC over stdin/stdout)
         ▼
 ┌───────────────────────────────────────────────┐
 │  mssql-localdb-mcp.exe                         │
 │                                                 │
 │  main.rs ── bootstrap tracing(stderr), config  │
-│  mcp/     ── handlers rmcp (tools/resources/prompts)
-│  localdb/ ── wrapper SqlLocalDB.exe            │
+│  mcp/     ── rmcp handlers (tools/resources/prompts)
+│  localdb/ ── SqlLocalDB.exe wrapper            │
 │  sql/     ── tiberius client (named pipe)      │
-│  discovery/ ── scan pastas (.mdf/.ldf)         │
-│  security/ ── classificador de risco, allowlist│
+│  discovery/ ── folder scan (.mdf/.ldf)         │
+│  security/ ── risk classifier, allowlist       │
 │  config/  ── TOML + env                        │
 └───────────────────────────────────────────────┘
         │                          │
         ▼                          ▼
-  SqlLocalDB.exe (subprocess)   named pipe → sqlservr.exe (instância LocalDB)
+  SqlLocalDB.exe (subprocess)   named pipe → sqlservr.exe (LocalDB instance)
 ```
 
-O processo é **stateless entre chamadas de tool** exceto pela sessão SQL (Fase 2, transações) e pelo pool de conexões por instância. Cada tool call é uma requisição JSON-RPC independente vinda do client MCP.
+The process is **stateless between tool calls** except for the SQL session (Phase 2, transactions). Each tool call opens its own connection and is an independent JSON-RPC request coming from the MCP client — there is no connection pool in v1 (see decisions table below).
 
-## 2. Módulos
+## 2. Modules
 
 ### `main.rs`
-Bootstrap: inicializa `tracing` apontando pra stderr, carrega `config::Config`, monta o servidor `rmcp` com transporte stdio, registra handlers, roda o loop.
+Bootstrap: initializes `tracing` pointed at stderr, loads `config::Config`, builds the `rmcp` server with stdio transport, registers handlers, runs the loop.
 
-Regra crítica: **nada escreve em stdout** exceto o próprio `rmcp` via transporte. Nenhum `println!`, nenhum log default do subprocess `SqlLocalDB.exe` deve vazar (captura stdout/stderr do subprocess e redireciona pra `tracing`, nunca repassa direto).
+Critical rule: **nothing writes to stdout** except `rmcp` itself via the transport. No `println!`, and no default log from the `SqlLocalDB.exe` subprocess may leak (subprocess stdout/stderr is captured and redirected to `tracing`, never passed through directly).
 
 ### `mcp/`
-Um handler por tool/resource/prompt, seguindo o contrato exato de `docs/MCP_SPEC.md`. Cada handler:
-1. Valida input (schema já garantido pelo `rmcp` via derive, validação semântica extra aqui — ex: path dentro da allowlist).
-2. Chama o módulo de domínio correspondente (`localdb::`, `sql::`, `discovery::`).
-3. Mapeia erro de domínio pra erro MCP (`McpError`) com mensagem útil ao agente, nunca stack trace cru.
+One handler per tool/resource/prompt, following the exact contract in `docs/MCP_SPEC.md`. Each handler:
+1. Validates input (schema already guaranteed by `rmcp` via derive; extra semantic validation happens here — e.g. path within the allowlist).
+2. Calls the corresponding domain module (`localdb::`, `sql::`, `discovery::`).
+3. Maps the domain error to an MCP error (`McpError`) with a message useful to the agent, never a raw stack trace.
 
 ### `localdb/`
-Wrapper fino sobre `SqlLocalDB.exe`:
-- `Command::new("SqlLocalDB.exe").arg(...)`, captura stdout/stderr, parse de texto (a saída do CLI é texto fixo em inglês na maioria das versões — testar localização/idioma do SO como risco conhecido).
-- Funções: `list_instances`, `versions`, `info(name)`, `create(name, version)`, `start(name)`, `stop(name, kill: bool)`, `delete(name)`, `share(name, shared_name)`, `unshare(name)`, `trace(name, on: bool)`.
-- `info()` retorna struct parseada (nome, versão, estado, named pipe, owner, auto-create, shared) — é daqui que `sql::` pega o pipe name pra conectar.
-- Erros de parsing isolados de erros de execução do processo (testável sem `SqlLocalDB.exe` real, usando fixtures de saída capturada).
+Thin wrapper over `SqlLocalDB.exe`:
+- `Command::new("SqlLocalDB.exe").arg(...)`, captures stdout/stderr, text parsing (the CLI's output is fixed English text on most versions — OS localization/language is tracked as a known risk).
+- Functions: `list_instances`, `versions`, `info(name)`, `create(name, version)`, `start(name)`, `stop(name, kill: bool)`, `delete(name)`, `ensure_running(name)`. `share`/`unshare`/`trace` are Phase 2.
+- `info()` returns a parsed struct (name, version, state, named pipe, owner, auto-create, shared) — this is where `sql::` gets the pipe name to connect to.
+- Parsing errors are isolated from process-execution errors (testable without a real `SqlLocalDB.exe`, using captured-output fixtures).
 
 ### `sql/`
-- `Connection`: abre `NamedPipeClient` (tokio) pro pipe retornado por `localdb::info`, entrega pro `tiberius::Client::connect`.
-- Pool simples por instância+database (evita reconectar a cada chamada; TTL de ociosidade fecha conexão).
-- `execute_script(sql: &str) -> Vec<BatchResult>`: split por linha `GO` (case-insensitive, respeitando que `GO` só conta como separador quando é a linha inteira), roda cada batch sequencialmente, agrega mensagens `PRINT`/erros/rowcount por batch.
-- `execute_query(sql: &str, max_rows: usize) -> QueryResult`: só aceita statement classificado como leitura (ver `security::classify`), serializa rows pra JSON preservando tipos (datetime, decimal, varbinary → base64, etc.).
-- `execute_statement(sql: &str, confirm: bool)`: chama `security::classify` primeiro; se destrutivo e `confirm != true`, retorna erro MCP pedindo confirmação explícita (não executa).
+- `connect(pipe_name, database)`: opens a `NamedPipeClient` (tokio) on the pipe returned by `localdb::info`/`start`, hands it to `tiberius::Client::connect`. Every call opens a fresh connection — no pool in v1; that's a deliberate simplicity trade-off for the MVP, not a correctness gap (see architecture decisions below).
+- `execute_script(pipe_name, database, script, confirm) -> Vec<BatchResult>`: splits on a `GO` line (case-insensitive, only counts as a separator when it's the whole line), runs each batch sequentially on the same connection (so session `SET` state persists across batches like it does in SSMS), aggregates rowcount/error per batch.
+- `execute_query(pipe_name, database, sql, max_rows) -> QueryResult`: only accepts a statement classified as read-only (see `security::classify`), serializes rows to JSON preserving types (datetime, decimal, varbinary → base64, etc.).
+- `execute_statement(pipe_name, database, sql, confirm)`: calls `security::classify` first; if destructive and `confirm != true`, returns an MCP error asking for explicit confirmation (does not execute).
 
 ### `discovery/`
-- `scan_folder(root: &Path) -> Vec<FoundDatabase>`: valida `root` contra allowlist do config (canonicaliza, rejeita `..`, rejeita se fora de qualquer raiz permitida), `walkdir` com profundidade máxima configurável, filtra `.mdf`/`.ldf`, cruza com `sys.databases` de instâncias ativas pra marcar `already_attached: bool`.
-- Sem follow de symlink por padrão (evita loop).
+- `scan_folder(root: &Path, max_depth: usize, attached_paths: &HashSet<PathBuf>) -> Vec<FoundDatabase>`: assumes `root` is already validated against the config allowlist by the caller (`security::validate_path`), walks with `walkdir` up to a configurable max depth, filters `.mdf`/`.ldf`, cross-checks against `attached_paths` to mark `already_attached: bool`. Inaccessible entries (permission denied, etc.) are skipped, not fatal — see decisions below.
+- No symlink following by default (avoids loops).
 
 ### `security/`
-- `classify(sql: &str) -> RiskLevel` (`ReadOnly | Destructive`): v1 via regex/keywords (`DROP`, `TRUNCATE`, `ALTER`, `DELETE`, `UPDATE` sem cláusula `WHERE`, `DROP DATABASE`, etc.); Fase 2 migra pra `sqlparser-rs` (AST real, elimina falso-negativo de regex).
-- `validate_path(path: &Path, allowlist: &[PathBuf]) -> Result<PathBuf>`: canonicaliza e confere prefixo contra allowlist.
-- `AuditLog`: append-only `.jsonl` em `%APPDATA%\mssql-localdb-mcp\audit\`, um registro por execução (timestamp, tool, hash do SQL, resultado resumido). Fase 2.
+- `classify(sql: &str) -> RiskLevel` (`ReadOnly | Destructive`): v1 via regex/keywords (`DROP`, `TRUNCATE`, `ALTER`, `DELETE`, `UPDATE`, `INSERT`, `CREATE`, etc., with `CREATE DATABASE ... FOR ATTACH` special-cased as read-only since it's additive); Phase 2 migrates to `sqlparser-rs` (real AST, eliminates regex false negatives).
+- `validate_path(path: &Path, allowlist: &[PathBuf]) -> Result<PathBuf>`: canonicalizes both sides and checks prefix against the allowlist.
+- `AuditLog`: append-only `.jsonl` under `%APPDATA%\mssql-localdb-mcp\audit\`, one record per execution (timestamp, tool, SQL hash, summarized result). Phase 2.
 
 ### `config/`
-- `Config` carregado de `%APPDATA%\mssql-localdb-mcp\config.toml`, com override por env var (`MSSQL_LOCALDB_MCP_*`).
-- Campos mínimos v1: `scan_allowlist: Vec<PathBuf>` (obrigatório, vazio = `db_scan_folder` sempre erro explicando que precisa configurar), `default_query_timeout_secs`, `default_max_rows`, `log_level`.
+- `Config` loaded from `%APPDATA%\mssql-localdb-mcp\config.toml`, with env var override (`MSSQL_LOCALDB_MCP_*`).
+- v1 minimal fields: `scan_allowlist: Vec<PathBuf>` (required, empty = `db_scan_folder` always errors explaining it needs configuring), `default_query_timeout_secs`, `default_max_rows`, `log_level`, `scan_max_depth`.
 
-## 3. Decisões técnicas e por quê
+## 3. Technical decisions and why
 
-| Decisão | Alternativa considerada | Por que essa escolha |
+| Decision | Alternative considered | Why this choice |
 |---|---|---|
-| Wrapper CLI `SqlLocalDB.exe` em vez de FFI `SQLUserInstance.dll` | Bind direto via `windows` crate + header `msoledbsql.h` | CLI é estável entre versões do LocalDB, documentado publicamente; FFI exige manter binding sincronizado com mudanças de ABI não documentadas publicamente como API estável |
-| Named pipe em vez de TCP | Forçar LocalDB a expor TCP | LocalDB usa named pipe por padrão; forçar TCP exige passo de config extra no lado do usuário, quebra o "funciona out of the box" |
-| `sqlparser-rs` em vez de regex puro pra classificação de risco | Regex only | Regex tem falso-negativo (ex: `DELETE` dentro de comentário/string escapa `WHERE` detection); AST é correto por construção. v1 aceita regex como ponte, Fase 2 migra |
-| stdio como transporte único v1 | HTTP/SSE | Clients MCP desktop (Claude Desktop/Code) usam stdio como padrão pra servidor local; HTTP adicionaria superfície de rede desnecessária pra um servidor que só faz sentido local |
-| Sem SQL Auth | Suportar usuário/senha | LocalDB é sempre local, Windows Integrated é o modelo nativo; adicionar senha é superfície de vazamento de secret sem ganho real de funcionalidade |
+| `SqlLocalDB.exe` CLI wrapper instead of `SQLUserInstance.dll` FFI | Direct bind via the `windows` crate + `msoledbsql.h` header | The CLI is stable across LocalDB versions and publicly documented; FFI requires keeping the binding in sync with ABI changes that aren't publicly documented as a stable API |
+| Named pipe instead of TCP | Force LocalDB to expose TCP | LocalDB uses a named pipe by default; forcing TCP requires an extra config step on the user's side, breaking "works out of the box" |
+| Keyword/regex now, `sqlparser-rs` later for risk classification | Regex only, forever | Regex has false negatives (e.g. `DELETE` inside a comment/string escapes `WHERE` detection); an AST is correct by construction. v1 accepts regex as a bridge, Phase 2 migrates |
+| No connection pool in v1 | Pool per instance+database | A fresh connection per call is simpler and correct; pooling is a performance optimization to add once real usage shows it matters, not a v1 requirement |
+| stdio as the only v1 transport | HTTP/SSE | Desktop MCP clients (Claude Desktop/Code) use stdio as the default for a local server; HTTP would add unnecessary network surface for a server that only makes sense locally |
+| No SQL Auth | Support username/password | LocalDB is always local, Windows Integrated is the native model; adding a password is secret-leak surface with no real functional gain |
 
-## 4. Fluxo de dados — exemplo `db_scan_folder` → `db_attach` → `sql_execute_query`
+## 4. Data flow — example `db_scan_folder` → `db_attach` → `sql_execute_query`
 
-1. Agente chama `db_scan_folder({ root: "D:\\Projetos\\Cliente" })`.
-2. `mcp/` valida via `security::validate_path` contra `config.scan_allowlist`.
-3. `discovery::scan_folder` percorre, acha `cliente.mdf` não anexado, retorna item com path e metadata.
-4. Agente chama `db_attach({ instance: "MSSQLLocalDB", mdf_path: "D:\\Projetos\\Cliente\\cliente.mdf" })`.
-5. `mcp/` pede `localdb::info("MSSQLLocalDB")` pro pipe name (inicia a instância se não estiver rodando), abre `sql::Connection`, roda `CREATE DATABASE ... FOR ATTACH`.
-6. Agente chama `sql_execute_query({ instance: "MSSQLLocalDB", database: "cliente", sql: "SELECT TOP 10 * FROM Pedidos" })`.
-7. `security::classify` confirma `ReadOnly`, `sql::execute_query` roda, serializa resultado, retorna JSON pro agente.
+1. Agent calls `db_scan_folder({ root: "D:\\Projects\\Client" })`.
+2. `mcp/` validates via `security::validate_path` against `config.scan_allowlist`.
+3. `discovery::scan_folder` walks the tree, finds an unattached `client.mdf`, returns an item with path and metadata.
+4. Agent calls `db_attach({ instance: "MSSQLLocalDB", mdf_path: "D:\\Projects\\Client\\client.mdf" })`.
+5. `mcp/` calls `localdb::ensure_running("MSSQLLocalDB")` for the pipe name (starts the instance if it isn't running), opens a `sql::` connection, runs `CREATE DATABASE ... FOR ATTACH`.
+6. Agent calls `sql_execute_query({ instance: "MSSQLLocalDB", database: "client", sql: "SELECT TOP 10 * FROM Orders" })`.
+7. `security::classify` confirms `ReadOnly`, `sql::execute_query` runs, serializes the result, returns JSON to the agent.
 
-## 5. O que NÃO fazer (armadilhas conhecidas)
+## 5. What NOT to do (known pitfalls)
 
-- Não abrir conexão nova a cada linha de `execute_script` — uma conexão, múltiplos batches sequenciais na mesma sessão (necessário pra `GO` funcionar como o SSMS espera, inclusive variáveis de sessão como `SET` persistindo entre batches).
-- Não confiar cegamente na saída de `SqlLocalDB.exe` em qualquer idioma — se o SO estiver em PT-BR, mensagens podem vir traduzidas; usar `info` em modo que force código de retorno + parsing tolerante, ou fixar `LANG`/`chcp` do subprocess se possível.
-- Não deixar `db_scan_folder` sem limite de profundidade — pasta de projeto pode ter `node_modules` gigante misturado, precisa profundidade máxima configurável e ignore-list básica (`node_modules`, `.git`, `bin`, `obj`).
+- Don't open a new connection per line of `execute_script` — one connection, multiple sequential batches in the same session (needed for `GO` to behave the way SSMS expects, including session variables like `SET` persisting across batches).
+- Don't blindly trust `SqlLocalDB.exe` output in any language — if the OS is set to a non-English locale, messages may come back translated; use `info` in a way that's tolerant of that, or pin the subprocess's `LANG`/`chcp` if possible.
+- Don't leave `db_scan_folder` without a depth limit — a project folder can have a giant `node_modules` mixed in, needs a configurable max depth and a basic ignore-list (`node_modules`, `.git`, `bin`, `obj`).

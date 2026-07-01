@@ -1,13 +1,13 @@
 <#
 .SYNOPSIS
-  Prepara uma release local: bump de versão, build release, empacota .mcpb
-  pra smoke test manual antes de tag/push.
+  Prepares a local release: version bump, release build, packages .mcpb
+  for a manual smoke test before tag/push.
 
 .DESCRIPTION
-  Não mexe em server.json — o hash SHA-256 publicado no registry é
-  calculado pelo build do CI (.github/workflows/release.yml) a partir do
-  artefato que ele mesmo gera, pra não depender de build reprodutível
-  byte-a-byte entre máquina local e runner.
+  Doesn't touch server.json — the SHA-256 hash published to the registry
+  is computed by the CI build (.github/workflows/release.yml) from the
+  artifact it generates itself, so it doesn't depend on a byte-for-byte
+  reproducible build between the local machine and the runner.
 
 .EXAMPLE
   ./scripts/prepare-release.ps1 -Version 0.1.0
@@ -21,28 +21,28 @@ $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
 Set-Location $root
 
-Write-Host "Preparando release v$Version..." -ForegroundColor Cyan
+Write-Host "Preparing release v$Version..." -ForegroundColor Cyan
 
-# 1. Versão no Cargo.toml
+# 1. Version in Cargo.toml
 $cargoToml = Get-Content Cargo.toml -Raw
 $cargoToml = $cargoToml -replace '(?m)^version = ".*"', "version = `"$Version`""
 Set-Content Cargo.toml -Value $cargoToml -NoNewline
 
-# 2. Versão no manifest.json do mcpb
+# 2. Version in the mcpb manifest.json
 $manifestPath = "mcpb/manifest.json"
 $manifest = Get-Content $manifestPath -Raw | ConvertFrom-Json
 $manifest.version = $Version
 ($manifest | ConvertTo-Json -Depth 10) | Set-Content $manifestPath
 
-# 3. Build release (regenera Cargo.lock com a nova versão)
+# 3. Release build (regenerates Cargo.lock with the new version)
 Write-Host "cargo build --release..." -ForegroundColor Cyan
 cargo build --release
-if ($LASTEXITCODE -ne 0) { throw "cargo build falhou" }
+if ($LASTEXITCODE -ne 0) { throw "cargo build failed" }
 
 cargo test
-if ($LASTEXITCODE -ne 0) { throw "cargo test falhou" }
+if ($LASTEXITCODE -ne 0) { throw "cargo test failed" }
 
-# 4. Empacota .mcpb (só pra smoke test manual — não é o artefato oficial)
+# 4. Package .mcpb (manual smoke test only — not the official artifact)
 $stagingDir = "target/mcpb-staging"
 if (Test-Path $stagingDir) { Remove-Item -Recurse -Force $stagingDir }
 New-Item -ItemType Directory -Path "$stagingDir/server" -Force | Out-Null
@@ -53,11 +53,11 @@ $bundleName = "mssql-localdb-mcp-$Version-win64.mcpb"
 $bundlePath = "target/$bundleName"
 if (Test-Path $bundlePath) { Remove-Item -Force $bundlePath }
 
-# Compress-Archive grava separador de path literal (`\`) no nome da
-# entrada no Windows, o que viola a spec ZIP (exige `/`) e quebra
-# extração em qualquer leitor não-Windows ou lib JS (Claude Desktop é
-# Electron). Monta o zip manualmente via System.IO.Compression pra
-# garantir `/` nas entradas.
+# Compress-Archive writes a literal `\` path separator into zip entry
+# names on Windows, which violates the ZIP spec (requires `/`) and
+# breaks extraction on any non-Windows reader or JS lib (Claude Desktop
+# is Electron). Build the zip by hand via System.IO.Compression to
+# guarantee `/` in entries.
 Add-Type -AssemblyName System.IO.Compression
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 $stagingFull = (Resolve-Path $stagingDir).Path
@@ -74,14 +74,14 @@ try {
 }
 
 Write-Host ""
-Write-Host "Bundle local (smoke test): $bundlePath" -ForegroundColor Green
+Write-Host "Local bundle (smoke test): $bundlePath" -ForegroundColor Green
 Write-Host ""
-Write-Host "Revise o diff, depois:" -ForegroundColor Yellow
+Write-Host "Review the diff, then:" -ForegroundColor Yellow
 Write-Host "  git add Cargo.toml Cargo.lock mcpb/manifest.json"
 Write-Host "  git commit -m `"chore: release v$Version`""
 Write-Host "  git tag v$Version"
 Write-Host "  git push origin master --tags"
 Write-Host ""
-Write-Host "O push da tag dispara .github/workflows/release.yml: build limpo no" -ForegroundColor Yellow
-Write-Host "runner, .mcpb oficial anexado ao GitHub Release, e publish no MCP" -ForegroundColor Yellow
-Write-Host "Registry via mcp-publisher (GitHub OIDC, sem secret manual)." -ForegroundColor Yellow
+Write-Host "Pushing the tag triggers .github/workflows/release.yml: clean build on" -ForegroundColor Yellow
+Write-Host "the runner, official .mcpb attached to the GitHub Release, and publish to" -ForegroundColor Yellow
+Write-Host "the MCP Registry via mcp-publisher (GitHub OIDC, no manual secret)." -ForegroundColor Yellow

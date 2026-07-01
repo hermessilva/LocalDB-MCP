@@ -1,11 +1,11 @@
-# Contribuindo
+# Contributing
 
-## Requisitos
+## Requirements
 
-- Windows com SQL Server Express LocalDB instalado (`SqlLocalDB.exe` no `PATH`).
-- Rust estável (edition 2024) via [rustup](https://rustup.rs).
+- Windows with SQL Server Express LocalDB installed (`SqlLocalDB.exe` on `PATH`).
+- Stable Rust (edition 2024) via [rustup](https://rustup.rs).
 
-## Build e testes
+## Build and test
 
 ```powershell
 cargo build
@@ -14,23 +14,23 @@ cargo fmt --all -- --check
 cargo clippy --all-targets -- -D warnings
 ```
 
-Os testes de integração criam e destroem instâncias LocalDB temporárias reais — não usam mock. Rodar `cargo test` localmente exige LocalDB instalado.
+Integration tests create and destroy real temporary LocalDB instances — no mocks. Running `cargo test` locally requires LocalDB installed.
 
-## Antes de abrir PR
+## Before opening a PR
 
-- `cargo fmt`, `cargo clippy -D warnings` e `cargo test` limpos.
-- Se mudou nome/schema/comportamento de alguma tool, resource ou prompt MCP, atualize [`docs/MCP_SPEC.md`](docs/MCP_SPEC.md) na mesma PR — é a fonte da verdade do contrato exposto.
-- Se mudou modelo de ameaça ou guardrail de segurança, atualize [`docs/SECURITY.md`](docs/SECURITY.md).
-- Leia [`CLAUDE.md`](CLAUDE.md) — regras não-negociáveis do projeto (stdout reservado ao protocolo MCP, sem SQL Auth, guard de confirmação obrigatório em ação destrutiva, scan restrito a allowlist).
+- `cargo fmt`, `cargo clippy -D warnings`, and `cargo test` clean.
+- If you changed a tool/resource/prompt's name, schema, or behavior, update [`docs/MCP_SPEC.md`](docs/MCP_SPEC.md) in the same PR — it's the source of truth for the exposed contract.
+- If you changed the threat model or a security guardrail, update [`docs/SECURITY.md`](docs/SECURITY.md).
+- Read [`CLAUDE.md`](CLAUDE.md) — the project's non-negotiable rules (stdout reserved for the MCP protocol, no SQL Auth, mandatory confirmation guard on destructive actions, allowlist-restricted scan).
 
-## Estrutura do projeto
+## Project structure
 
-Ver [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) para os módulos e as decisões técnicas (e os porquês). Ver [`docs/PLANNING.md`](docs/PLANNING.md) para o roadmap e em qual fase cada funcionalidade está.
+See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the modules and technical decisions (and the reasoning behind them). See [`docs/PLANNING.md`](docs/PLANNING.md) for the roadmap and which phase each feature is in.
 
-## Reportando bugs / sugerindo funcionalidade
+## Reporting bugs / suggesting features
 
-Abra uma [issue](https://github.com/hermessilva/LocalDB-MCP/issues). Pra bug, inclua: versão do LocalDB (`SqlLocalDB.exe versions`), a tool/comando MCP usado, e a mensagem de erro completa.
+Open an [issue](https://github.com/hermessilva/LocalDB-MCP/issues). For a bug, include: LocalDB version (`SqlLocalDB.exe versions`), the MCP tool/command used, and the full error message.
 
-## Segurança
+## Security
 
-Não abra issue pública pra vulnerabilidade de segurança. Ver [`docs/SECURITY.md`](docs/SECURITY.md) pro modelo de ameaça — se achar algo fora do que já está documentado como risco aceito, reporte de forma privada (ex: GitHub Security Advisory do repositório).
+Don't open a public issue for a security vulnerability. See [`docs/SECURITY.md`](docs/SECURITY.md) for the threat model — if you find something outside what's already documented as an accepted risk, report it privately (e.g. via the repository's GitHub Security Advisory).

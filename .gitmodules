@@ -1,6 +1,0 @@
-[submodule "AGE-P-Git"]
-	path = AGE-P-Git
-	url = https://github.com/Tootega/AGE-P-Git.git
-[submodule "AGE-P-Cloud"]
-	path = AGE-P-Cloud
-	url = https://github.com/Tootega/AGE-P-Cloud.git

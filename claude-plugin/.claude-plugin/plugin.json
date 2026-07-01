@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
+  "name": "mssql-localdb-mcp",
+  "displayName": "MSSQL LocalDB MCP",
+  "version": "0.1.0",
+  "description": "MCP server for SQL Server Express LocalDB on Windows: manage instances, run T-SQL, discover DBs",
+  "author": {
+    "name": "Hermes Silva",
+    "url": "https://github.com/hermessilva"
+  },
+  "homepage": "https://github.com/hermessilva/LocalDB-MCP",
+  "repository": "https://github.com/hermessilva/LocalDB-MCP",
+  "license": "MIT",
+  "keywords": ["sql-server", "localdb", "mssql", "database", "windows", "tsql"]
+}

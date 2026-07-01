@@ -66,8 +66,10 @@ Exit criterion: `docs/MCP_SPEC.md` covers 100% of the implemented surface; no to
 - [x] Community docs: complete `README.md`, `CONTRIBUTING.md`, `LICENSE`, config examples (Claude Desktop, Claude Code)
 - [x] `CHANGELOG.md`
 - [x] `scripts/prepare-release.ps1` — version bump + local build + packages `.mcpb` for a smoke test before tagging
+- [x] **Published**: `io.github.hermessilva/mssql-localdb-mcp` is live on the official MCP Registry (`status: active`, `isLatest: true`), `v0.1.0` GitHub Release with `.mcpb` asset
+- [ ] `claude-plugin/` — self-contained Claude Code plugin (bundles the Windows binary directly), validated locally (`claude plugin validate --strict` + real `claude --plugin-dir` smoke test, both passing). **Not yet submitted** to `anthropics/claude-plugins-official` — submission goes through a [form](https://clau.de/plugin-directory-submission) reviewed by Anthropic, requires a human to fill it in (repo owner contact info, etc.), so it's a manual step outside this repo.
 
-Exit criterion: `io.github.hermessilva/mssql-localdb-mcp` installable via the official MCP Registry, signed binary, no blocking SmartScreen warning. **Partially met** — infra ready, `v0.1.0` GitHub Release published with the `.mcpb` asset; MCP Registry publish step is being retried after fixing two dry-run bugs (see backlog below). Code signing is still deferred to a future release.
+Exit criterion: `io.github.hermessilva/mssql-localdb-mcp` installable via the official MCP Registry, signed binary, no blocking SmartScreen warning. **Mostly met** — published and listed on the MCP Registry. Code signing still deferred to a future release; the curated `claude-plugins-official` listing needs a manual form submission (see above) and is not automatic from the MCP Registry publish.
 
 ### Phase 4 — Robustness
 - [ ] MARS (Multiple Active Result Sets), if supported by tiberius/LocalDB

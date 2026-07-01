@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "mssql-localdb": {
+      "command": "${CLAUDE_PLUGIN_ROOT}/server/mssql-localdb-mcp.exe",
+      "args": []
+    }
+  }
+}

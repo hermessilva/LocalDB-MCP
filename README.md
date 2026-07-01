@@ -20,7 +20,17 @@ Existing MCP tools for SQL Server assume an already-configured remote server and
 
 ### Via MCP Registry
 
-Once published, install through any MCP client that supports the [official MCP Registry](https://registry.modelcontextprotocol.io) under `io.github.hermessilva/mssql-localdb-mcp`.
+Published on the [official MCP Registry](https://registry.modelcontextprotocol.io) as `io.github.hermessilva/mssql-localdb-mcp`. Install through any MCP client that supports the registry.
+
+### Via Claude Code plugin
+
+The [`claude-plugin/`](claude-plugin/) directory in this repo is a self-contained Claude Code plugin (bundles the Windows binary directly, no separate download). Load it directly with:
+
+```powershell
+claude --plugin-dir path\to\LocalDB-MCP\claude-plugin
+```
+
+or install it from the [official Claude Code plugin marketplace](https://github.com/anthropics/claude-plugins-official) once listed there.
 
 ### From source
 

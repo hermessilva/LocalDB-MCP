@@ -3,8 +3,8 @@
   "name": "mssql-localdb-mcp",
   "display_name": "MSSQL LocalDB MCP",
   "version": "0.1.0",
-  "description": "Servidor MCP para SQL Server Express LocalDB no Windows",
-  "long_description": "Gerencia instâncias LocalDB, executa qualquer script/comando T-SQL suportado pelo LocalDB, e descobre bancos .mdf/.ldf soltos em pastas de projeto. Windows apenas, Windows Integrated Authentication apenas. Toda ação destrutiva (DROP, DELETE, ALTER, etc.) exige confirmação explícita antes de executar.",
+  "description": "MCP server for SQL Server Express LocalDB on Windows",
+  "long_description": "Manages LocalDB instances, runs any T-SQL script/command supported by LocalDB, and discovers loose .mdf/.ldf files in project folders. Windows only, Windows Integrated Authentication only. Every destructive action (DROP, DELETE, ALTER, etc.) requires explicit confirmation before executing.",
   "author": {
     "name": "Hermes Silva",
     "url": "https://github.com/hermessilva"

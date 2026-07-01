@@ -2,13 +2,13 @@ use std::path::PathBuf;
 
 use serde::Deserialize;
 
-/// Configuração carregada de `%APPDATA%\mssql-localdb-mcp\config.toml`,
-/// com override por variável de ambiente `MSSQL_LOCALDB_MCP_*`.
+/// Configuration loaded from `%APPDATA%\mssql-localdb-mcp\config.toml`,
+/// with override via `MSSQL_LOCALDB_MCP_*` environment variables.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(default)]
 pub struct Config {
-    /// Raízes permitidas para `db_scan_folder`. Vazio por padrão — a tool
-    /// recusa rodar até o usuário configurar isso explicitamente.
+    /// Allowed roots for `db_scan_folder`. Empty by default — the tool
+    /// refuses to run until the user configures this explicitly.
     pub scan_allowlist: Vec<PathBuf>,
     pub default_query_timeout_secs: u64,
     pub default_max_rows: usize,
@@ -34,9 +34,9 @@ impl Config {
 
         let mut config = if path.exists() {
             let text = std::fs::read_to_string(&path)
-                .map_err(|e| anyhow::anyhow!("falha ao ler {}: {e}", path.display()))?;
+                .map_err(|e| anyhow::anyhow!("failed to read {}: {e}", path.display()))?;
             toml::from_str(&text)
-                .map_err(|e| anyhow::anyhow!("config.toml inválido em {}: {e}", path.display()))?
+                .map_err(|e| anyhow::anyhow!("invalid config.toml at {}: {e}", path.display()))?
         } else {
             Config::default()
         };
@@ -47,7 +47,7 @@ impl Config {
 
     pub fn config_path() -> anyhow::Result<PathBuf> {
         let base = directories::BaseDirs::new()
-            .ok_or_else(|| anyhow::anyhow!("não foi possível determinar %APPDATA%"))?;
+            .ok_or_else(|| anyhow::anyhow!("could not determine %APPDATA%"))?;
         Ok(base
             .config_dir()
             .join("mssql-localdb-mcp")

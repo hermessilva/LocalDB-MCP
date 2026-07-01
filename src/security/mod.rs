@@ -6,13 +6,11 @@ use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum SecurityError {
-    #[error("path fora das raízes permitidas em config.scan_allowlist")]
+    #[error("path outside the roots allowed in config.scan_allowlist")]
     PathNotAllowed,
-    #[error(
-        "config.scan_allowlist está vazio — configure ao menos uma raiz antes de usar esta ferramenta"
-    )]
+    #[error("config.scan_allowlist is empty — configure at least one root before using this tool")]
     AllowlistEmpty,
-    #[error("erro de E/S ao validar path: {0}")]
+    #[error("I/O error validating path: {0}")]
     Io(#[from] std::io::Error),
 }
 
@@ -23,11 +21,11 @@ pub enum RiskLevel {
     Destructive,
 }
 
-/// Palavras-chave que classificam um statement como destrutivo. v1: keyword
-/// matching sobre o texto sem comentários — cobre os casos comuns, mas tem
-/// falso-negativo conhecido para SQL dinâmico ofuscado em string
-/// (`EXEC('DELETE FROM...')`). Migrar para `sqlparser-rs` (AST real) fecha
-/// esse gap — ver docs/PLANNING.md Fase 2.
+/// Keywords that classify a statement as destructive. v1: keyword matching
+/// over the comment-stripped text — covers the common cases, but has a
+/// known false negative for obfuscated dynamic SQL inside a string
+/// (`EXEC('DELETE FROM...')`). Migrating to `sqlparser-rs` (real AST)
+/// closes that gap — see docs/PLANNING.md Phase 2.
 const DESTRUCTIVE_KEYWORDS: &[&str] = &[
     "DROP", "TRUNCATE", "ALTER", "DELETE", "UPDATE", "INSERT", "MERGE", "GRANT", "REVOKE", "DENY",
     "EXEC", "EXECUTE", "CREATE",
@@ -47,11 +45,11 @@ fn strip_comments(sql: &str) -> String {
     BLOCK_COMMENT.replace_all(&no_line, "").into_owned()
 }
 
-/// Classifica um trecho de T-SQL como `ReadOnly` ou `Destructive`.
+/// Classifies a T-SQL snippet as `ReadOnly` or `Destructive`.
 ///
-/// `CREATE DATABASE ... FOR ATTACH` é tratado como não-destrutivo (é
-/// aditivo, não sobrescreve nada existente) mesmo contendo a palavra
-/// `CREATE`.
+/// `CREATE DATABASE ... FOR ATTACH` is treated as non-destructive (it's
+/// additive, doesn't overwrite anything existing) even though it contains
+/// the word `CREATE`.
 pub fn classify(sql: &str) -> RiskLevel {
     let cleaned = strip_comments(sql);
 
@@ -66,8 +64,8 @@ pub fn classify(sql: &str) -> RiskLevel {
     }
 }
 
-/// Valida que `path` está contido em alguma raiz de `allowlist` (após
-/// canonicalização de ambos). Nunca segue link fora da allowlist.
+/// Validates that `path` is contained within some root of `allowlist`
+/// (after canonicalizing both). Never follows a link outside the allowlist.
 pub fn validate_path(path: &Path, allowlist: &[PathBuf]) -> Result<PathBuf, SecurityError> {
     if allowlist.is_empty() {
         return Err(SecurityError::AllowlistEmpty);
@@ -93,13 +91,13 @@ mod tests {
 
     #[test]
     fn select_is_read_only() {
-        assert_eq!(classify("SELECT * FROM Pedidos"), RiskLevel::ReadOnly);
+        assert_eq!(classify("SELECT * FROM Orders"), RiskLevel::ReadOnly);
     }
 
     #[test]
     fn delete_is_destructive() {
         assert_eq!(
-            classify("DELETE FROM Pedidos WHERE Id = 1"),
+            classify("DELETE FROM Orders WHERE Id = 1"),
             RiskLevel::Destructive
         );
     }
@@ -107,7 +105,7 @@ mod tests {
     #[test]
     fn destructive_keyword_inside_comment_is_ignored() {
         assert_eq!(
-            classify("-- DROP TABLE Pedidos\nSELECT 1"),
+            classify("-- DROP TABLE Orders\nSELECT 1"),
             RiskLevel::ReadOnly
         );
     }
@@ -115,7 +113,7 @@ mod tests {
     #[test]
     fn create_database_for_attach_is_read_only() {
         assert_eq!(
-            classify("CREATE DATABASE [cliente] ON (FILENAME = 'c:\\cliente.mdf') FOR ATTACH"),
+            classify("CREATE DATABASE [client] ON (FILENAME = 'c:\\client.mdf') FOR ATTACH"),
             RiskLevel::ReadOnly
         );
     }
@@ -128,13 +126,13 @@ mod tests {
     #[test]
     fn create_table_is_destructive() {
         assert_eq!(
-            classify("CREATE TABLE Pedidos (Id INT)"),
+            classify("CREATE TABLE Orders (Id INT)"),
             RiskLevel::Destructive
         );
     }
 
     #[test]
     fn drop_database_is_destructive() {
-        assert_eq!(classify("DROP DATABASE [cliente]"), RiskLevel::Destructive);
+        assert_eq!(classify("DROP DATABASE [client]"), RiskLevel::Destructive);
     }
 }

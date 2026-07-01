@@ -1,44 +1,45 @@
 # CLAUDE.md
 
-Guia para Claude Code (e qualquer agente) trabalhando neste repositório.
+Guide for Claude Code (and any agent) working in this repository.
 
-## O que é este projeto
+## What this project is
 
-`mssql-localdb-mcp` — servidor MCP (Model Context Protocol) escrito em Rust que dá a agentes de IA acesso completo ao Microsoft SQL Server Express LocalDB no Windows: gestão de instâncias, execução de scripts T-SQL, descoberta de bancos soltos em pastas de projeto, introspecção de schema.
+`mssql-localdb-mcp` — an MCP (Model Context Protocol) server written in Rust that gives AI agents full access to Microsoft SQL Server Express LocalDB on Windows: instance management, T-SQL script execution, discovery of loose databases in project folders, schema introspection.
 
-Documentos de referência (ler antes de qualquer mudança estrutural):
-- `docs/PLANNING.md` — roadmap, fases, escopo de cada milestone.
-- `docs/ARCHITECTURE.md` — módulos, fluxo de dados, decisões técnicas e por quê.
-- `docs/MCP_SPEC.md` — contrato exato de cada tool/resource/prompt MCP exposto (fonte da verdade para nomes, schemas de input/output).
-- `docs/SECURITY.md` — modelo de ameaça e guardrails obrigatórios.
+Reference documents (read before any structural change):
+- `docs/PLANNING.md` — roadmap, phases, scope of each milestone.
+- `docs/ARCHITECTURE.md` — modules, data flow, technical decisions and why.
+- `docs/MCP_SPEC.md` — exact contract of every tool/resource/prompt exposed over MCP (source of truth for names, input/output schemas).
+- `docs/SECURITY.md` — threat model and mandatory guardrails.
 
-Se um destes documentos divergir do código, o código está errado (ou o doc está desatualizado — atualize o doc na mesma PR).
+If one of these documents diverges from the code, the code is wrong (or the doc is stale — update the doc in the same PR).
 
-## Regras não negociáveis
+## Non-negotiable rules
 
-1. **Plataforma**: Windows apenas. Não adicionar cfg cross-platform "por via das dúvidas" — LocalDB não existe fora de Windows. `#[cfg(windows)]` implícito no projeto todo, não precisa espalhar a anotação.
-2. **stdout é sagrado**: transporte MCP via stdio usa stdout pro protocolo JSON-RPC. Nenhum `println!`, log, ou saída de subprocess pode vazar pro stdout. Logging sempre via `tracing` configurado pra stderr.
-3. **Sem SQL Auth**: só Windows Integrated Authentication. Não implementar campo de senha em nenhuma tool ou config. Isso é decisão de segurança deliberada, não lacuna.
-4. **Guardrail de destrutivo é obrigatório**: qualquer tool que rode DDL/DML classificado como destrutivo (`security::classify`) precisa do campo `confirm: true` no input. Não remover essa checagem "pra simplificar". Ver `docs/SECURITY.md`.
-5. **Scan de pasta é restrito a allowlist**: `db_scan_folder` nunca varre fora das raízes configuradas em `config.toml`. Não adicionar scan recursivo de `C:\` inteiro nem fallback "se não configurado, varre tudo".
-6. **rmcp é o SDK oficial**: não trocar por reimplementação própria do protocolo MCP nem por outro crate de terceiros.
+1. **Platform**: Windows only. Don't add cross-platform cfg "just in case" — LocalDB doesn't exist outside Windows. `#[cfg(windows)]` is implicit across the whole project, no need to spread the annotation around.
+2. **stdout is sacred**: the MCP stdio transport uses stdout for the JSON-RPC protocol. No `println!`, log, or subprocess output can leak to stdout. Logging always goes through `tracing` configured for stderr.
+3. **No SQL Auth**: Windows Integrated Authentication only. Don't add a password field to any tool or config. This is a deliberate security decision, not a gap.
+4. **Destructive guardrail is mandatory**: any tool running DDL/DML classified as destructive (`security::classify`) needs a `confirm: true` field in its input. Don't remove that check "to simplify". See `docs/SECURITY.md`.
+5. **Folder scan is allowlist-restricted**: `db_scan_folder` never scans outside the roots configured in `config.toml`. Don't add a recursive scan of all of `C:\` or a fallback of "scan everything if unconfigured".
+6. **rmcp is the official SDK**: don't swap it for a homegrown MCP protocol implementation or another third-party crate.
+7. **Everything in English**: this is a public/published project — code, comments, docs, commit messages, and everything protocol-facing (tool descriptions, error messages) are all in English, regardless of the language used in conversation with the user. Commit messages follow [Conventional Commits](https://www.conventionalcommits.org/) (`feat:`, `fix:`, `chore:`, etc.).
 
-## Convenções de código
+## Code conventions
 
-- Edition 2021, `cargo fmt` + `cargo clippy --all-targets -- -D warnings` limpos antes de qualquer commit.
-- Erros: `thiserror` para tipos de erro de domínio, `anyhow` só em `main.rs`/bordas de processo.
-- Toda função que chama `SqlLocalDB.exe` ou executa SQL deve ser testável sem instância real quando possível (parsing de saída isolado da execução do processo).
-- Sem comentário óbvio. Comentário só quando explica um porquê não óbvio (workaround de versão do LocalDB, limitação do tiberius, etc.).
-- Não adicionar abstração/config genérica além do que a fase atual do roadmap pede.
+- Edition 2024, `cargo fmt` + `cargo clippy --all-targets -- -D warnings` clean before any commit.
+- Errors: `thiserror` for domain error types, `anyhow` only in `main.rs`/process boundaries.
+- Every function that calls `SqlLocalDB.exe` or runs SQL should be testable without a real instance where possible (output parsing isolated from process execution).
+- No obvious comments. Only comment when it explains a non-obvious why (LocalDB version workaround, tiberius limitation, etc.).
+- Don't add generic abstraction/config beyond what the current roadmap phase asks for.
 
-## Testes
+## Tests
 
-- Testes de integração reais (`tests/`) criam e destroem instância LocalDB temporária — nunca reusar instância do usuário.
-- Rodar `cargo test` localmente exige LocalDB instalado (padrão em máquina dev Windows com Visual Studio ou SQL Server tools).
-- CI roda em `windows-latest`; verificar disponibilidade de LocalDB no runner antes de assumir presente (ver `docs/PLANNING.md`, seção CI).
+- Real integration tests (`tests/`) create and destroy a temporary LocalDB instance — never reuse the user's instance.
+- Running `cargo test` locally requires LocalDB installed (default on a Windows dev machine with Visual Studio or SQL Server tools).
+- CI runs on `windows-latest`; confirm LocalDB availability on the runner before assuming it's present (see `docs/PLANNING.md`, CI section).
 
-## Antes de abrir PR / publicar release
+## Before opening a PR / publishing a release
 
-- Atualizar `docs/MCP_SPEC.md` se qualquer tool/resource/prompt mudou de nome, schema ou comportamento.
-- Rodar `cargo audit` e `cargo deny check`.
-- Tag semver (`vX.Y.Z`) dispara publish automático no MCP Registry — não criar tag manualmente sem revisar `server.json`.
+- Update `docs/MCP_SPEC.md` if any tool/resource/prompt changed name, schema, or behavior.
+- Run `cargo audit` and `cargo deny check`.
+- A semver tag (`vX.Y.Z`) triggers automatic publish to the MCP Registry — don't create a tag manually without reviewing `server.json`.

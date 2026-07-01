@@ -1,28 +1,30 @@
 # mssql-localdb-mcp
 
-Servidor [MCP](https://modelcontextprotocol.io) em Rust para SQL Server Express LocalDB no Windows. Dá a agentes de IA (Claude Desktop, Claude Code, e qualquer client MCP) controle completo sobre instâncias LocalDB: criar/gerenciar instâncias, executar qualquer script T-SQL, achar bancos de dados soltos em pastas de projeto e anexá-los, introspectar schema.
+Rust [MCP](https://modelcontextprotocol.io) server for SQL Server Express LocalDB on Windows. Gives AI agents (Claude Desktop, Claude Code, and any MCP client) full control over LocalDB instances: create/manage instances, run any T-SQL script, find loose database files in project folders and attach them, introspect schema.
 
-> Status: MVP (Fase 1) funcional e testado contra LocalDB real — ver `docs/PLANNING.md` para roadmap e fase atual. Ainda sem release publicado no MCP Registry.
+> Status: MVP (Phase 1) functional and tested against real LocalDB — see `docs/PLANNING.md` for the roadmap and current phase.
 
-## Por que
+## Why
 
-Ferramentas MCP existentes pra SQL Server assumem servidor remoto já configurado e exigem runtime externo (Python, .NET, Node). Este projeto é:
-- **Binário único Rust**, sem runtime externo, sem Docker.
-- **Focado em LocalDB**: fluxo de dev local — achar `.mdf` solto numa pasta de projeto, anexar, rodar script, sem precisar abrir SSMS.
-- **Windows-only por design**, não uma abstração genérica multi-SGBD.
+Existing MCP tools for SQL Server assume an already-configured remote server and require an external runtime (Python, .NET, Node). This project is:
+- **Single Rust binary**, no external runtime, no Docker.
+- **LocalDB-focused**: local dev workflow — find a loose `.mdf` in a project folder, attach it, run a script, no need to open SSMS.
+- **Windows-only by design**, not a generic multi-database abstraction.
 
-## Requisitos
+## Requirements
 
-- Windows com SQL Server Express LocalDB instalado (`SqlLocalDB.exe` no `PATH`).
-- Client MCP compatível (Claude Desktop, Claude Code, etc.).
+- Windows with SQL Server Express LocalDB installed (`SqlLocalDB.exe` on `PATH`).
+- A compatible MCP client (Claude Desktop, Claude Code, etc.).
 
-## Instalação
+## Installation
 
-Ainda não publicado no MCP Registry — por enquanto, build a partir do código fonte. Ver `docs/PLANNING.md`, Fase 3, para o plano de publicação (`io.github.hermessilva/mssql-localdb-mcp`).
+### Via MCP Registry
 
-### 1. Build
+Once published, install through any MCP client that supports the [official MCP Registry](https://registry.modelcontextprotocol.io) under `io.github.hermessilva/mssql-localdb-mcp`.
 
-Requer [Rust](https://rustup.rs) e LocalDB instalado.
+### From source
+
+Requires [Rust](https://rustup.rs) and LocalDB installed.
 
 ```powershell
 git clone https://github.com/hermessilva/LocalDB-MCP.git
@@ -30,30 +32,30 @@ cd LocalDB-MCP
 cargo build --release
 ```
 
-Binário em `target\release\mssql-localdb-mcp.exe`.
+Binary at `target\release\mssql-localdb-mcp.exe`.
 
-### 2. Configurar `config.toml`
+### Configure `config.toml`
 
-`db_scan_folder` exige ao menos uma raiz liberada explicitamente — sem isso, a tool recusa rodar. Crie `%APPDATA%\mssql-localdb-mcp\config.toml`:
+`db_scan_folder` requires at least one explicitly allowed root — without it, the tool refuses to run. Create `%APPDATA%\mssql-localdb-mcp\config.toml`:
 
 ```toml
-# Paths do Windows em TOML precisam de aspas simples (string literal) —
-# aspas duplas interpretam \U... como escape unicode e quebram o parse.
-scan_allowlist = ['C:\Users\SeuUsuario\source\repos']
+# Windows paths in TOML need single quotes (literal string) — double
+# quotes interpret \U... as a unicode escape and break parsing.
+scan_allowlist = ['C:\Users\YourUser\source\repos']
 scan_max_depth = 6
 default_query_timeout_secs = 30
 default_max_rows = 1000
 ```
 
-### 3. Configurar no client MCP
+### Configure in your MCP client
 
-**Claude Desktop / Claude Code** (`claude_desktop_config.json` ou equivalente):
+**Claude Desktop / Claude Code** (`claude_desktop_config.json` or equivalent):
 
 ```json
 {
   "mcpServers": {
     "mssql-localdb": {
-      "command": "C:\\caminho\\para\\LocalDB-MCP\\target\\release\\mssql-localdb-mcp.exe"
+      "command": "C:\\path\\to\\LocalDB-MCP\\target\\release\\mssql-localdb-mcp.exe"
     }
   }
 }
@@ -62,28 +64,28 @@ default_max_rows = 1000
 **Claude Code via CLI:**
 
 ```powershell
-claude mcp add mssql-localdb -- "C:\caminho\para\LocalDB-MCP\target\release\mssql-localdb-mcp.exe"
+claude mcp add mssql-localdb -- "C:\path\to\LocalDB-MCP\target\release\mssql-localdb-mcp.exe"
 ```
 
-Depois disso, o agente já tem acesso às tools `localdb_*`, `sql_*` e `db_*` — ver [`docs/MCP_SPEC.md`](docs/MCP_SPEC.md) pra lista completa.
+After that, the agent has access to the `localdb_*`, `sql_*`, and `db_*` tools — see [`docs/MCP_SPEC.md`](docs/MCP_SPEC.md) for the full list.
 
-## Documentação
+## Documentation
 
-- [`docs/PLANNING.md`](docs/PLANNING.md) — roadmap, fases, escopo de cada milestone.
-- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — módulos, decisões técnicas, fluxo de dados.
-- [`docs/MCP_SPEC.md`](docs/MCP_SPEC.md) — contrato exato de cada tool/resource/prompt exposto.
-- [`docs/SECURITY.md`](docs/SECURITY.md) — modelo de ameaça e guardrails.
-- [`CLAUDE.md`](CLAUDE.md) — guia pra agentes de IA trabalhando neste repositório.
-- [`CONTRIBUTING.md`](CONTRIBUTING.md) — como contribuir.
-- [`CHANGELOG.md`](CHANGELOG.md) — histórico de mudanças.
+- [`docs/PLANNING.md`](docs/PLANNING.md) — roadmap, phases, scope of each milestone.
+- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — modules, technical decisions, data flow.
+- [`docs/MCP_SPEC.md`](docs/MCP_SPEC.md) — exact contract of every tool/resource/prompt exposed.
+- [`docs/SECURITY.md`](docs/SECURITY.md) — threat model and guardrails.
+- [`CLAUDE.md`](CLAUDE.md) — guide for AI agents working in this repository.
+- [`CONTRIBUTING.md`](CONTRIBUTING.md) — how to contribute.
+- [`CHANGELOG.md`](CHANGELOG.md) — change history.
 
-## Segurança — leia antes de usar
+## Security — read before using
 
-- Só Windows Integrated Authentication (sem SQL Auth).
-- Toda ação destrutiva (DROP, TRUNCATE, DELETE, ALTER, etc.) exige confirmação explícita (`confirm: true`) — nunca executa silenciosamente.
-- Descoberta de banco (`db_scan_folder`) só varre pastas explicitamente liberadas em `config.toml` (allowlist).
-- Detalhe completo em [`docs/SECURITY.md`](docs/SECURITY.md).
+- Windows Integrated Authentication only (no SQL Auth).
+- Every destructive action (DROP, TRUNCATE, DELETE, ALTER, etc.) requires explicit confirmation (`confirm: true`) — never executes silently.
+- Database discovery (`db_scan_folder`) only scans folders explicitly allowed in `config.toml` (allowlist).
+- Full detail in [`docs/SECURITY.md`](docs/SECURITY.md).
 
-## Licença
+## License
 
 [MIT](LICENSE).

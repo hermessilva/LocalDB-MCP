@@ -9,13 +9,13 @@ const DEFAULT_INSTANCE: &str = "MSSQLLocalDB";
 
 #[derive(Debug, Error)]
 pub enum LocalDbError {
-    #[error("SqlLocalDB.exe não encontrado no PATH — LocalDB está instalado?")]
+    #[error("SqlLocalDB.exe not found on PATH — is LocalDB installed?")]
     ExecutableNotFound,
-    #[error("SqlLocalDB.exe falhou: {0}")]
+    #[error("SqlLocalDB.exe failed: {0}")]
     CommandFailed(String),
-    #[error("instância '{0}' iniciada mas sem pipe name na saída de SqlLocalDB.exe")]
+    #[error("instance '{0}' started but no pipe name in SqlLocalDB.exe output")]
     NoPipeName(String),
-    #[error("erro de E/S: {0}")]
+    #[error("I/O error: {0}")]
     Io(#[from] std::io::Error),
 }
 
@@ -135,7 +135,7 @@ pub async fn create(name: &str, version: Option<&str>, start: bool) -> Result<()
     Ok(())
 }
 
-/// Inicia a instância e retorna o pipe name usado para conectar via `sql::`.
+/// Starts the instance and returns the pipe name used to connect via `sql::`.
 pub async fn start(name: &str) -> Result<String> {
     run(&["start", name]).await?;
     info(name)
@@ -158,9 +158,9 @@ pub async fn delete(name: &str) -> Result<()> {
     Ok(())
 }
 
-/// Garante que a instância está rodando e retorna o pipe name pra conectar.
-/// Inicia a instância automaticamente se estiver parada (`auto_create` do
-/// LocalDB já cobre a maioria dos casos, mas isso torna explícito).
+/// Ensures the instance is running and returns the pipe name to connect to.
+/// Starts the instance automatically if it's stopped (LocalDB's
+/// `auto_create` already covers most cases, but this makes it explicit).
 pub async fn ensure_running(name: &str) -> Result<String> {
     let current = info(name).await?;
     if current.state.eq_ignore_ascii_case("running")

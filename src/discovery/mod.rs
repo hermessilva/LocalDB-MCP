@@ -22,7 +22,7 @@ pub struct FoundDatabase {
     pub likely_database_name: Option<String>,
 }
 
-/// Pastas que nunca compensa varrer — custo alto, ruído garantido.
+/// Folders never worth scanning — high cost, guaranteed noise.
 const IGNORED_DIR_NAMES: &[&str] = &["node_modules", ".git", "bin", "obj"];
 
 fn is_ignored_dir(entry: &walkdir::DirEntry) -> bool {
@@ -46,17 +46,18 @@ fn classify_extension(path: &Path) -> Option<FileKind> {
     }
 }
 
-/// Varre `root` (já validado contra a allowlist pelo chamador — ver
-/// `security::validate_path`) em busca de `.mdf`/`.ldf` soltos.
+/// Scans `root` (already validated against the allowlist by the caller —
+/// see `security::validate_path`) for loose `.mdf`/`.ldf` files.
 ///
-/// `attached_paths` é o conjunto de paths físicos já anexados conhecidos
-/// pelo chamador. Em Fase 1, antes de `db_list_attached` existir, esse
-/// conjunto normalmente vem vazio — `already_attached` fica `false` até essa
-/// tool cruzar a informação de verdade (ver docs/PLANNING.md Fase 2).
+/// `attached_paths` is the set of physical paths already known to be
+/// attached, as supplied by the caller. In Phase 1, before
+/// `db_list_attached` exists, this set is normally empty —
+/// `already_attached` stays `false` until that tool cross-checks the real
+/// state (see docs/PLANNING.md Phase 2).
 ///
-/// Entradas inacessíveis (permissão negada, link quebrado etc.) são
-/// puladas silenciosamente — comum em pastas de sistema misturadas na
-/// árvore (`AppData` e afins), não pode abortar o scan inteiro.
+/// Inaccessible entries (permission denied, broken link, etc.) are
+/// silently skipped — common in system folders mixed into the tree
+/// (`AppData` and the like); can't abort the whole scan over one of those.
 pub fn scan_folder(
     root: &Path,
     max_depth: usize,
@@ -71,9 +72,9 @@ pub fn scan_folder(
         .filter_entry(|e| !is_ignored_dir(e));
 
     for entry in walker {
-        // Uma subpasta sem permissão (comum em `AppData`, pastas de sistema
-        // misturadas na árvore, etc.) não pode abortar o scan inteiro — só
-        // pula essa entrada e segue.
+        // A subfolder without permission (common in `AppData`, system
+        // folders mixed into the tree, etc.) can't abort the whole scan —
+        // just skip this entry and move on.
         let Ok(entry) = entry else {
             continue;
         };
@@ -122,8 +123,8 @@ mod tests {
         let dir =
             std::env::temp_dir().join(format!("mssql-localdb-mcp-test-{}", std::process::id()));
         fs::create_dir_all(dir.join("node_modules")).unwrap();
-        fs::write(dir.join("cliente.mdf"), b"x").unwrap();
-        fs::write(dir.join("cliente_log.ldf"), b"x").unwrap();
+        fs::write(dir.join("client.mdf"), b"x").unwrap();
+        fs::write(dir.join("client_log.ldf"), b"x").unwrap();
         fs::write(dir.join("node_modules").join("ignored.mdf"), b"x").unwrap();
 
         let found = scan_folder(&dir, 8, &HashSet::new());

@@ -1,0 +1,35 @@
+[package]
+name = "mssql-localdb-mcp"
+version = "0.1.0"
+edition = "2024"
+description = "Servidor MCP em Rust para SQL Server Express LocalDB no Windows"
+license = "MIT"
+repository = "https://github.com/hermessilva/LocalDB-MCP"
+
+[[bin]]
+name = "mssql-localdb-mcp"
+path = "src/main.rs"
+
+[dependencies]
+rmcp = { version = "2.0", features = ["server", "transport-io", "macros"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "process", "net", "time", "sync", "fs", "io-util"] }
+tokio-util = { version = "0.7", features = ["compat"] }
+tiberius = { version = "0.12", features = ["chrono"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+schemars = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+anyhow = "1"
+thiserror = "2"
+walkdir = "2"
+toml = "0.8"
+directories = "5"
+clap = { version = "4", features = ["derive"] }
+chrono = { version = "0.4", features = ["serde"] }
+regex = "1"
+base64 = "0.22"
+
+[profile.release]
+lto = true
+strip = true

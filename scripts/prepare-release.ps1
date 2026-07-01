@@ -52,7 +52,26 @@ Copy-Item "target/release/mssql-localdb-mcp.exe" "$stagingDir/server/mssql-local
 $bundleName = "mssql-localdb-mcp-$Version-win64.mcpb"
 $bundlePath = "target/$bundleName"
 if (Test-Path $bundlePath) { Remove-Item -Force $bundlePath }
-Compress-Archive -Path "$stagingDir/*" -DestinationPath $bundlePath
+
+# Compress-Archive grava separador de path literal (`\`) no nome da
+# entrada no Windows, o que viola a spec ZIP (exige `/`) e quebra
+# extração em qualquer leitor não-Windows ou lib JS (Claude Desktop é
+# Electron). Monta o zip manualmente via System.IO.Compression pra
+# garantir `/` nas entradas.
+Add-Type -AssemblyName System.IO.Compression
+Add-Type -AssemblyName System.IO.Compression.FileSystem
+$stagingFull = (Resolve-Path $stagingDir).Path
+$zip = [System.IO.Compression.ZipFile]::Open($bundlePath, [System.IO.Compression.ZipArchiveMode]::Create)
+try {
+    Get-ChildItem -Path $stagingDir -Recurse -File | ForEach-Object {
+        $relativePath = $_.FullName.Substring($stagingFull.Length + 1) -replace '\\', '/'
+        [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile(
+            $zip, $_.FullName, $relativePath, [System.IO.Compression.CompressionLevel]::Optimal
+        ) | Out-Null
+    }
+} finally {
+    $zip.Dispose()
+}
 
 Write-Host ""
 Write-Host "Bundle local (smoke test): $bundlePath" -ForegroundColor Green

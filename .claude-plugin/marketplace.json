@@ -1,0 +1,18 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "localdb-mcp",
+  "description": "mssql-localdb-mcp plugin marketplace",
+  "owner": {
+    "name": "Hermes Silva",
+    "email": "hxpelo@gmail.com"
+  },
+  "plugins": [
+    {
+      "name": "mssql-localdb-mcp",
+      "source": "./claude-plugin",
+      "description": "MCP server for SQL Server Express LocalDB on Windows: manage instances, run T-SQL, discover DBs",
+      "category": "database",
+      "homepage": "https://github.com/hermessilva/LocalDB-MCP"
+    }
+  ]
+}

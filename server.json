@@ -1,0 +1,21 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.hermessilva/mssql-localdb-mcp",
+  "description": "Servidor MCP para SQL Server Express LocalDB no Windows — gestão de instâncias, execução de T-SQL, descoberta de bancos .mdf/.ldf soltos em pastas de projeto",
+  "title": "MSSQL LocalDB MCP",
+  "repository": {
+    "url": "https://github.com/hermessilva/LocalDB-MCP",
+    "source": "github"
+  },
+  "version": "0.1.0",
+  "packages": [
+    {
+      "registryType": "mcpb",
+      "identifier": "https://github.com/hermessilva/LocalDB-MCP/releases/download/v0.1.0/mssql-localdb-mcp-0.1.0-win64.mcpb",
+      "fileSha256": "0000000000000000000000000000000000000000000000000000000000000",
+      "transport": {
+        "type": "stdio"
+      }
+    }
+  ]
+}

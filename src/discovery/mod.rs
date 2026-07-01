@@ -30,7 +30,11 @@ fn is_ignored_dir(entry: &walkdir::DirEntry) -> bool {
         && entry
             .file_name()
             .to_str()
-            .map(|name| IGNORED_DIR_NAMES.iter().any(|ignored| ignored.eq_ignore_ascii_case(name)))
+            .map(|name| {
+                IGNORED_DIR_NAMES
+                    .iter()
+                    .any(|ignored| ignored.eq_ignore_ascii_case(name))
+            })
             .unwrap_or(false)
 }
 
@@ -53,7 +57,11 @@ fn classify_extension(path: &Path) -> Option<FileKind> {
 /// Entradas inacessíveis (permissão negada, link quebrado etc.) são
 /// puladas silenciosamente — comum em pastas de sistema misturadas na
 /// árvore (`AppData` e afins), não pode abortar o scan inteiro.
-pub fn scan_folder(root: &Path, max_depth: usize, attached_paths: &HashSet<PathBuf>) -> Vec<FoundDatabase> {
+pub fn scan_folder(
+    root: &Path,
+    max_depth: usize,
+    attached_paths: &HashSet<PathBuf>,
+) -> Vec<FoundDatabase> {
     let mut found = Vec::new();
 
     let walker = WalkDir::new(root)
@@ -82,7 +90,10 @@ pub fn scan_folder(root: &Path, max_depth: usize, attached_paths: &HashSet<PathB
             continue;
         };
 
-        let modified_at: DateTime<Utc> = metadata.modified().map(DateTime::from).unwrap_or_else(|_| Utc::now());
+        let modified_at: DateTime<Utc> = metadata
+            .modified()
+            .map(DateTime::from)
+            .unwrap_or_else(|_| Utc::now());
 
         let path = entry.path().to_path_buf();
         let likely_database_name = path.file_stem().and_then(|s| s.to_str()).map(String::from);
@@ -108,7 +119,8 @@ mod tests {
 
     #[test]
     fn finds_loose_mdf_and_ignores_node_modules() {
-        let dir = std::env::temp_dir().join(format!("mssql-localdb-mcp-test-{}", std::process::id()));
+        let dir =
+            std::env::temp_dir().join(format!("mssql-localdb-mcp-test-{}", std::process::id()));
         fs::create_dir_all(dir.join("node_modules")).unwrap();
         fs::write(dir.join("cliente.mdf"), b"x").unwrap();
         fs::write(dir.join("cliente_log.ldf"), b"x").unwrap();
@@ -121,6 +133,10 @@ mod tests {
         assert_eq!(found.len(), 2);
         assert!(found.iter().any(|f| f.kind == FileKind::Mdf));
         assert!(found.iter().any(|f| f.kind == FileKind::Ldf));
-        assert!(found.iter().all(|f| !f.path.to_string_lossy().contains("node_modules")));
+        assert!(
+            found
+                .iter()
+                .all(|f| !f.path.to_string_lossy().contains("node_modules"))
+        );
     }
 }

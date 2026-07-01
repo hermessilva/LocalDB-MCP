@@ -53,7 +53,11 @@ async fn run(args: &[&str]) -> Result<String> {
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
-        let message = if stderr.trim().is_empty() { stdout } else { stderr };
+        let message = if stderr.trim().is_empty() {
+            stdout
+        } else {
+            stderr
+        };
         return Err(LocalDbError::CommandFailed(message.trim().to_string()));
     }
 

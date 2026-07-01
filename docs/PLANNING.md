@@ -31,18 +31,18 @@ Servidores MCP para SQL Server hoje (Python, .NET, Node) assumem conexão remota
 ### Fase 1 — MVP (v0.1.0)
 Objetivo: agente consegue achar um banco numa pasta, anexar, e rodar SQL nele.
 
-- [ ] Esqueleto do projeto (`Cargo.toml`, módulos, `main.rs` com transporte stdio funcionando, handshake MCP básico)
-- [ ] `localdb::` wrapper: `list_instances`, `versions`, `info`, `create_instance`, `start_instance`, `stop_instance`, `delete_instance`
-- [ ] `sql::` client: conectar via named pipe, `execute_script` (split por `GO`), `execute_query` (SELECT), `execute_statement` (com guard de confirmação)
-- [ ] `discovery::` scan de pasta (`db_scan_folder`) restrito a allowlist de config
-- [ ] `db_attach` / `db_detach`
-- [ ] `db_list_tables` (introspecção mínima via `INFORMATION_SCHEMA`)
-- [ ] `config::` — TOML em `%APPDATA%\mssql-localdb-mcp\config.toml`, allowlist de pastas obrigatória
-- [ ] `security::classify` — classificador básico (regex + keywords) de statement destrutivo
-- [ ] Testes de integração: criar/destruir instância temporária, attach/detach, execute_script
-- [ ] README com instruções de instalação manual (`cargo install` / binário) e config no Claude Desktop/Code
+- [x] Esqueleto do projeto (`Cargo.toml`, módulos, `main.rs` com transporte stdio funcionando, handshake MCP básico)
+- [x] `localdb::` wrapper: `list_instances`, `versions`, `info`, `create_instance`, `start_instance`, `stop_instance`, `delete_instance`
+- [x] `sql::` client: conectar via named pipe, `execute_script` (split por `GO`), `execute_query` (SELECT), `execute_statement` (com guard de confirmação)
+- [x] `discovery::` scan de pasta (`db_scan_folder`) restrito a allowlist de config
+- [x] `db_attach` / `db_detach`
+- [x] `db_list_tables` (introspecção mínima via `INFORMATION_SCHEMA`)
+- [x] `config::` — TOML em `%APPDATA%\mssql-localdb-mcp\config.toml`, allowlist de pastas obrigatória
+- [x] `security::classify` — classificador básico (regex + keywords) de statement destrutivo
+- [ ] Testes de integração automatizados (`cargo test --test integration`): criar/destruir instância temporária, attach/detach, execute_script — validado manualmente via handshake MCP real (ver histórico), mas ainda não como suite automatizada no CI
+- [x] README com instruções de instalação manual (build) e config no Claude Desktop/Code
 
-Critério de saída: rodar localmente contra LocalDB real, todas as tools do MVP funcionando via `mcp-inspector` ou Claude Desktop.
+Critério de saída: rodar localmente contra LocalDB real, todas as tools do MVP funcionando via `mcp-inspector` ou Claude Desktop. **Atingido** — validado manualmente contra instância real e contra um banco de projeto real (`.mdf`/`.ldf` de ~75MB), incluindo ciclo completo scan → attach → introspect → detach. Dois bugs achados e corrigidos nesse processo (ver `CHANGELOG.md`).
 
 ### Fase 2 — Superfície completa
 - [ ] Resto da gestão de instância: `share`/`unshare`, `trace`
@@ -59,14 +59,15 @@ Critério de saída: rodar localmente contra LocalDB real, todas as tools do MVP
 Critério de saída: `docs/MCP_SPEC.md` cobre 100% da superfície implementada; nenhuma tool "TODO".
 
 ### Fase 3 — Publicação
-- [ ] Assinatura de código (Authenticode) do binário release
-- [ ] Empacotamento `mcpb` (manifest.json + binário) via GitHub Release
-- [ ] `server.json` na raiz do repo, namespace `io.github.<user>/mssql-localdb-mcp`
-- [ ] GitHub Actions: build release + assinatura + publish automático no MCP Registry via `mcp-publisher` + GitHub OIDC (tag `vX.Y.Z`)
-- [ ] Docs de comunidade: `README.md` completo, `CONTRIBUTING.md`, `LICENSE`, exemplos de config (Claude Desktop, Claude Code, outros clients MCP)
-- [ ] `CHANGELOG.md`
+- [ ] Assinatura de código (Authenticode) do binário release — **adiado**, sem certificado disponível; v0.1.0 sai sem assinar (usuário vê SmartScreen no primeiro run). Ver backlog.
+- [x] Empacotamento `mcpb` (`mcpb/manifest.json` + binário) — montado em CI, ver `.github/workflows/release.yml`
+- [x] `server.json` na raiz do repo, namespace `io.github.hermessilva/mssql-localdb-mcp`
+- [x] GitHub Actions: `ci.yml` (fmt/clippy/test/build em push/PR) + `release.yml` (build + empacota mcpb + GitHub Release + publish no MCP Registry via `mcp-publisher` + GitHub OIDC, dispara em tag `vX.Y.Z`) — **não testado em CI real ainda**, primeira tag vai validar o workflow de ponta a ponta
+- [x] Docs de comunidade: `README.md` completo, `CONTRIBUTING.md`, `LICENSE`, exemplos de config (Claude Desktop, Claude Code)
+- [x] `CHANGELOG.md`
+- [x] `scripts/prepare-release.ps1` — bump de versão + build local + empacota `.mcpb` pra smoke test antes de tag
 
-Critério de saída: `io.github.<user>/mssql-localdb-mcp` instalável via MCP Registry oficial, binário assinado, sem warning de SmartScreen bloqueante.
+Critério de saída: `io.github.hermessilva/mssql-localdb-mcp` instalável via MCP Registry oficial, binário assinado, sem warning de SmartScreen bloqueante. **Parcialmente atingido** — infra pronta, mas publicação real (push da tag `v0.1.0`) ainda não disparada, e assinatura de código fica pra release futura.
 
 ### Fase 4 — Robustez
 - [ ] MARS (Multiple Active Result Sets), se suportado pelo tiberius/LocalDB
@@ -79,11 +80,13 @@ Critério de saída: `io.github.<user>/mssql-localdb-mcp` instalável via MCP Re
 
 - Suporte a `sqlcmd` variables (`:setvar`, `$(VAR)`) no `sql_execute_script` — v1 não suporta, avaliar demanda real antes de adicionar.
 - Se `SQLUserInstance.dll` (API nativa) compensa substituir o wrapper CLI — só revisitar se o wrapper CLI mostrar limitação real (parsing frágil, performance).
-- Formato exato de paginação em `sql_execute_query` (`OFFSET/FETCH` vs `TOP` vs cursor) — decidir na Fase 1 ao implementar.
+- Formato exato de paginação em `sql_execute_query` (`OFFSET/FETCH` vs `TOP` vs cursor) — decidido: `max_rows` com truncamento simples (v1), sem cursor/paginação real.
+- Assinatura de código (Authenticode): sem certificado disponível em 2026-07-01. v0.1.0 publica sem assinar. Revisitar quando houver certificado (EV reduz fricção de SmartScreen mais rápido que OV) — orçar isso antes de qualquer push de marketing do projeto, já que SmartScreen sem assinatura afugenta usuário leigo.
+- `.github/workflows/release.yml` foi escrito mas nunca disparado de verdade (nenhuma tag `vX.Y.Z` criada ainda) — primeira tag real deve ser tratada como dry-run, com atenção a: presença de LocalDB no runner (ver seção 5), nome exato do asset `mcp-publisher` (confirmado `mcp-publisher_windows_amd64.tar.gz` contendo `mcp-publisher.exe` em 2026-07-01, mas repo upstream pode mudar convenção), e se o namespace `io.github.hermessilva` já está validado via GitHub OIDC no MCP Registry.
 
 ## 5. CI
 
-- Runner `windows-latest`: confirmar presença de LocalDB antes de assumir (pode exigir `winget install Microsoft.SQLServer.2022.LocalDB` ou similar no workflow).
+- Runner `windows-latest`: confirmar presença de LocalDB antes de assumir (pode exigir `winget install Microsoft.SQLServer.2022.LocalDB` ou similar no workflow). **Ainda não confirmado** — `ci.yml`/`release.yml` rodam `cargo test`/`cargo build` mas nenhum já rodou de verdade num runner GitHub; testes de integração real com LocalDB podem falhar no CI se o runner não tiver a instância pré-instalada.
 - Pipeline: `cargo fmt --check`, `cargo clippy -D warnings`, `cargo test` (unit), `cargo test --test integration` (exige LocalDB), `cargo audit`.
 
 ## 6. Métrica de sucesso do projeto

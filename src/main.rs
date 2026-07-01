@@ -17,7 +17,9 @@ async fn main() -> Result<()> {
     let config = Config::load()?;
 
     tracing_subscriber::fmt()
-        .with_env_filter(EnvFilter::try_new(&config.log_level).unwrap_or_else(|_| EnvFilter::new("info")))
+        .with_env_filter(
+            EnvFilter::try_new(&config.log_level).unwrap_or_else(|_| EnvFilter::new("info")),
+        )
         .with_writer(std::io::stderr)
         .with_ansi(false)
         .init();

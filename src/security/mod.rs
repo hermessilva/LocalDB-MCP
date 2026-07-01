@@ -8,7 +8,9 @@ use thiserror::Error;
 pub enum SecurityError {
     #[error("path fora das raízes permitidas em config.scan_allowlist")]
     PathNotAllowed,
-    #[error("config.scan_allowlist está vazio — configure ao menos uma raiz antes de usar esta ferramenta")]
+    #[error(
+        "config.scan_allowlist está vazio — configure ao menos uma raiz antes de usar esta ferramenta"
+    )]
     AllowlistEmpty,
     #[error("erro de E/S ao validar path: {0}")]
     Io(#[from] std::io::Error),
@@ -33,9 +35,8 @@ const DESTRUCTIVE_KEYWORDS: &[&str] = &[
 
 static LINE_COMMENT: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"--[^\n]*").unwrap());
 static BLOCK_COMMENT: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?s)/\*.*?\*/").unwrap());
-static FOR_ATTACH: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?is)CREATE\s+DATABASE\b.*\bFOR\s+ATTACH\b").unwrap()
-});
+static FOR_ATTACH: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?is)CREATE\s+DATABASE\b.*\bFOR\s+ATTACH\b").unwrap());
 static WORD_BOUNDARY: LazyLock<Regex> = LazyLock::new(|| {
     let alternation = DESTRUCTIVE_KEYWORDS.join("|");
     Regex::new(&format!(r"(?i)\b({alternation})\b")).unwrap()

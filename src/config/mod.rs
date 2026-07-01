@@ -48,7 +48,10 @@ impl Config {
     pub fn config_path() -> anyhow::Result<PathBuf> {
         let base = directories::BaseDirs::new()
             .ok_or_else(|| anyhow::anyhow!("não foi possível determinar %APPDATA%"))?;
-        Ok(base.config_dir().join("mssql-localdb-mcp").join("config.toml"))
+        Ok(base
+            .config_dir()
+            .join("mssql-localdb-mcp")
+            .join("config.toml"))
     }
 
     fn apply_env_overrides(&mut self) {

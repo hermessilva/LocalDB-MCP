@@ -60,7 +60,10 @@ async fn open_pipe(pipe_name: &str) -> Result<NamedPipeClient> {
 
     Err(SqlError::PipeConnect {
         pipe: path.to_string(),
-        source: std::io::Error::new(std::io::ErrorKind::TimedOut, "pipe ocupado (ERROR_PIPE_BUSY) após retries"),
+        source: std::io::Error::new(
+            std::io::ErrorKind::TimedOut,
+            "pipe ocupado (ERROR_PIPE_BUSY) após retries",
+        ),
     })
 }
 
@@ -241,17 +244,19 @@ pub async fn execute_query(
         .unwrap_or_default();
 
     let truncated = first_set.len() > max_rows;
-    let rows = first_set
-        .iter()
-        .take(max_rows)
-        .map(row_to_json)
-        .collect();
+    let rows = first_set.iter().take(max_rows).map(row_to_json).collect();
 
-    Ok(QueryResult { columns, rows, truncated })
+    Ok(QueryResult {
+        columns,
+        rows,
+        truncated,
+    })
 }
 
 fn row_to_json(row: &tiberius::Row) -> Vec<Value> {
-    (0..row.columns().len()).map(|idx| cell_to_json(row, idx)).collect()
+    (0..row.columns().len())
+        .map(|idx| cell_to_json(row, idx))
+        .collect()
 }
 
 fn cell_to_json(row: &tiberius::Row, idx: usize) -> Value {

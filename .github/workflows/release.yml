@@ -1,0 +1,93 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write
+  id-token: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Instalar toolchain Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: cargo test
+        run: cargo test --all-targets
+
+      - name: cargo build --release
+        run: cargo build --release
+
+      - name: Extrair versão da tag
+        id: version
+        shell: pwsh
+        run: |
+          $version = "${{ github.ref_name }}" -replace '^v', ''
+          "version=$version" >> $env:GITHUB_OUTPUT
+
+      - name: Empacotar .mcpb
+        id: package
+        shell: pwsh
+        run: |
+          $version = "${{ steps.version.outputs.version }}"
+
+          $manifest = Get-Content mcpb/manifest.json -Raw | ConvertFrom-Json
+          $manifest.version = $version
+
+          $staging = "target/mcpb-staging"
+          New-Item -ItemType Directory -Path "$staging/server" -Force | Out-Null
+          ($manifest | ConvertTo-Json -Depth 10) | Set-Content "$staging/manifest.json"
+          Copy-Item "target/release/mssql-localdb-mcp.exe" "$staging/server/mssql-localdb-mcp.exe"
+
+          $bundleName = "mssql-localdb-mcp-$version-win64.mcpb"
+          $bundlePath = "target/$bundleName"
+          Compress-Archive -Path "$staging/*" -DestinationPath $bundlePath
+
+          $hash = (Get-FileHash -Path $bundlePath -Algorithm SHA256).Hash.ToLower()
+          "bundle_name=$bundleName" >> $env:GITHUB_OUTPUT
+          "bundle_path=$bundlePath" >> $env:GITHUB_OUTPUT
+          "sha256=$hash" >> $env:GITHUB_OUTPUT
+
+      - name: Criar GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ steps.package.outputs.bundle_path }}
+          generate_release_notes: true
+
+      - name: Publicar no MCP Registry
+        shell: pwsh
+        run: |
+          $version = "${{ steps.version.outputs.version }}"
+          $sha256 = "${{ steps.package.outputs.sha256 }}"
+          $bundleName = "${{ steps.package.outputs.bundle_name }}"
+          $repo = "${{ github.repository }}"
+
+          # server.json commitado no repo é o ponto de partida; versão,
+          # identifier e hash são preenchidos aqui com os valores reais
+          # deste build — nunca commitados de volta (evita depender de
+          # build reprodutível byte-a-byte entre máquina local e runner).
+          $server = Get-Content server.json -Raw | ConvertFrom-Json
+          $server.version = $version
+          $server.packages[0].identifier = "https://github.com/$repo/releases/download/${{ github.ref_name }}/$bundleName"
+          $server.packages[0].fileSha256 = $sha256
+          ($server | ConvertTo-Json -Depth 10) | Set-Content server.json
+
+          Invoke-WebRequest -Uri "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_windows_amd64.tar.gz" -OutFile mcp-publisher.tar.gz
+          New-Item -ItemType Directory -Path mcp-publisher-bin -Force | Out-Null
+          tar -xzf mcp-publisher.tar.gz -C mcp-publisher-bin
+          $publisher = Join-Path (Resolve-Path mcp-publisher-bin) "mcp-publisher.exe"
+
+          & $publisher login github-oidc
+          & $publisher publish

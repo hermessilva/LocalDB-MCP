@@ -20,13 +20,17 @@ fn default_instance() -> String {
 }
 
 fn ok_json<T: serde::Serialize>(value: &T) -> Result<CallToolResult, McpError> {
-    let text = serde_json::to_string(value)
-        .map_err(|e| McpError::internal_error(format!("falha ao serializar resultado: {e}"), None))?;
+    let text = serde_json::to_string(value).map_err(|e| {
+        McpError::internal_error(format!("falha ao serializar resultado: {e}"), None)
+    })?;
     Ok(CallToolResult::success(vec![ContentBlock::text(text)]))
 }
 
 fn confirmation_required(message: impl Into<String>) -> McpError {
-    McpError::invalid_params(message.into(), Some(json!({"code": "CONFIRMATION_REQUIRED"})))
+    McpError::invalid_params(
+        message.into(),
+        Some(json!({"code": "CONFIRMATION_REQUIRED"})),
+    )
 }
 
 fn localdb_error(e: localdb::LocalDbError) -> McpError {
@@ -195,9 +199,13 @@ impl McpServer {
         &self,
         Parameters(args): Parameters<CreateInstanceArgs>,
     ) -> Result<CallToolResult, McpError> {
-        localdb::create(&args.instance, args.version.as_deref(), args.start.unwrap_or(false))
-            .await
-            .map_err(localdb_error)?;
+        localdb::create(
+            &args.instance,
+            args.version.as_deref(),
+            args.start.unwrap_or(false),
+        )
+        .await
+        .map_err(localdb_error)?;
         ok_json(&json!({ "created": true, "instance": args.instance }))
     }
 
@@ -221,30 +229,45 @@ impl McpServer {
         ok_json(&json!({ "stopped": true }))
     }
 
-    #[tool(description = "Apaga uma instância LocalDB (não apaga os arquivos de banco anexados). Destrutivo — exige confirm=true")]
+    #[tool(
+        description = "Apaga uma instância LocalDB (não apaga os arquivos de banco anexados). Destrutivo — exige confirm=true"
+    )]
     async fn localdb_delete_instance(
         &self,
         Parameters(args): Parameters<DeleteInstanceArgs>,
     ) -> Result<CallToolResult, McpError> {
         if !args.confirm {
-            return Err(confirmation_required("apagar a instância requer confirm=true"));
+            return Err(confirmation_required(
+                "apagar a instância requer confirm=true",
+            ));
         }
-        localdb::delete(&args.instance).await.map_err(localdb_error)?;
+        localdb::delete(&args.instance)
+            .await
+            .map_err(localdb_error)?;
         ok_json(&json!({ "deleted": true }))
     }
 
     // --- Grupo B: canal de script/SQL ------------------------------------
 
-    #[tool(description = "Roda script T-SQL multi-batch (separador GO em linha própria) na mesma sessão. Batch destrutivo exige confirm=true")]
+    #[tool(
+        description = "Roda script T-SQL multi-batch (separador GO em linha própria) na mesma sessão. Batch destrutivo exige confirm=true"
+    )]
     async fn sql_execute_script(
         &self,
         Parameters(args): Parameters<ExecuteScriptArgs>,
     ) -> Result<CallToolResult, McpError> {
         let instance = args.instance.unwrap_or_else(default_instance);
-        let pipe_name = localdb::ensure_running(&instance).await.map_err(localdb_error)?;
-        let batches = sql::execute_script(&pipe_name, &args.database, &args.script, args.confirm.unwrap_or(false))
+        let pipe_name = localdb::ensure_running(&instance)
             .await
-            .map_err(sql_error)?;
+            .map_err(localdb_error)?;
+        let batches = sql::execute_script(
+            &pipe_name,
+            &args.database,
+            &args.script,
+            args.confirm.unwrap_or(false),
+        )
+        .await
+        .map_err(sql_error)?;
         ok_json(&json!({ "batches": batches }))
     }
 
@@ -254,7 +277,9 @@ impl McpServer {
         Parameters(args): Parameters<ExecuteQueryArgs>,
     ) -> Result<CallToolResult, McpError> {
         let instance = args.instance.unwrap_or_else(default_instance);
-        let pipe_name = localdb::ensure_running(&instance).await.map_err(localdb_error)?;
+        let pipe_name = localdb::ensure_running(&instance)
+            .await
+            .map_err(localdb_error)?;
         let max_rows = args.max_rows.unwrap_or(self.config.default_max_rows);
         let result = sql::execute_query(&pipe_name, &args.database, &args.sql, max_rows)
             .await
@@ -268,22 +293,32 @@ impl McpServer {
         Parameters(args): Parameters<ExecuteStatementArgs>,
     ) -> Result<CallToolResult, McpError> {
         let instance = args.instance.unwrap_or_else(default_instance);
-        let pipe_name = localdb::ensure_running(&instance).await.map_err(localdb_error)?;
-        let result = sql::execute_statement(&pipe_name, &args.database, &args.sql, args.confirm.unwrap_or(false))
+        let pipe_name = localdb::ensure_running(&instance)
             .await
-            .map_err(sql_error)?;
+            .map_err(localdb_error)?;
+        let result = sql::execute_statement(
+            &pipe_name,
+            &args.database,
+            &args.sql,
+            args.confirm.unwrap_or(false),
+        )
+        .await
+        .map_err(sql_error)?;
         ok_json(&result)
     }
 
     // --- Grupo C: descoberta e metadata -----------------------------------
 
-    #[tool(description = "Varre uma pasta em busca de .mdf/.ldf soltos. Restrito às raízes em config.scan_allowlist")]
+    #[tool(
+        description = "Varre uma pasta em busca de .mdf/.ldf soltos. Restrito às raízes em config.scan_allowlist"
+    )]
     async fn db_scan_folder(
         &self,
         Parameters(args): Parameters<ScanFolderArgs>,
     ) -> Result<CallToolResult, McpError> {
         let root = PathBuf::from(&args.root);
-        let validated = security::validate_path(&root, &self.config.scan_allowlist).map_err(security_error)?;
+        let validated =
+            security::validate_path(&root, &self.config.scan_allowlist).map_err(security_error)?;
         let max_depth = args.max_depth.unwrap_or(self.config.scan_max_depth);
 
         let found = discovery::scan_folder(&validated, max_depth, &HashSet::new());
@@ -291,14 +326,21 @@ impl McpServer {
         ok_json(&json!({ "found": found }))
     }
 
-    #[tool(description = "Anexa um .mdf solto (achado via db_scan_folder) como banco de dados na instância")]
-    async fn db_attach(&self, Parameters(args): Parameters<AttachArgs>) -> Result<CallToolResult, McpError> {
+    #[tool(
+        description = "Anexa um .mdf solto (achado via db_scan_folder) como banco de dados na instância"
+    )]
+    async fn db_attach(
+        &self,
+        Parameters(args): Parameters<AttachArgs>,
+    ) -> Result<CallToolResult, McpError> {
         let mdf_path = PathBuf::from(&args.mdf_path);
-        let validated_mdf =
-            security::validate_path(&mdf_path, &self.config.scan_allowlist).map_err(security_error)?;
+        let validated_mdf = security::validate_path(&mdf_path, &self.config.scan_allowlist)
+            .map_err(security_error)?;
 
         let instance = args.instance.unwrap_or_else(default_instance);
-        let pipe_name = localdb::ensure_running(&instance).await.map_err(localdb_error)?;
+        let pipe_name = localdb::ensure_running(&instance)
+            .await
+            .map_err(localdb_error)?;
 
         let database_name = args.database_name.unwrap_or_else(|| {
             validated_mdf
@@ -308,12 +350,19 @@ impl McpServer {
                 .to_string()
         });
 
-        let mut files = format!("(FILENAME = N'{}')", escape_sql_literal(&validated_mdf.to_string_lossy()));
+        let mut files = format!(
+            "(FILENAME = N'{}')",
+            escape_sql_literal(&validated_mdf.to_string_lossy())
+        );
 
         if let Some(ldf) = &args.ldf_path {
-            let validated_ldf = security::validate_path(&PathBuf::from(ldf), &self.config.scan_allowlist)
-                .map_err(security_error)?;
-            files.push_str(&format!(", (FILENAME = N'{}')", escape_sql_literal(&validated_ldf.to_string_lossy())));
+            let validated_ldf =
+                security::validate_path(&PathBuf::from(ldf), &self.config.scan_allowlist)
+                    .map_err(security_error)?;
+            files.push_str(&format!(
+                ", (FILENAME = N'{}')",
+                escape_sql_literal(&validated_ldf.to_string_lossy())
+            ));
         }
 
         let statement = format!(
@@ -331,16 +380,26 @@ impl McpServer {
         ok_json(&json!({ "attached": true, "database": database_name }))
     }
 
-    #[tool(description = "Desanexa um banco de dados da instância (sp_detach_db). Destrutivo — exige confirm=true")]
-    async fn db_detach(&self, Parameters(args): Parameters<DetachArgs>) -> Result<CallToolResult, McpError> {
+    #[tool(
+        description = "Desanexa um banco de dados da instância (sp_detach_db). Destrutivo — exige confirm=true"
+    )]
+    async fn db_detach(
+        &self,
+        Parameters(args): Parameters<DetachArgs>,
+    ) -> Result<CallToolResult, McpError> {
         if !args.confirm {
             return Err(confirmation_required("desanexar banco requer confirm=true"));
         }
 
         let instance = args.instance.unwrap_or_else(default_instance);
-        let pipe_name = localdb::ensure_running(&instance).await.map_err(localdb_error)?;
+        let pipe_name = localdb::ensure_running(&instance)
+            .await
+            .map_err(localdb_error)?;
 
-        let statement = format!("EXEC sp_detach_db N'{}'", escape_sql_literal(&args.database));
+        let statement = format!(
+            "EXEC sp_detach_db N'{}'",
+            escape_sql_literal(&args.database)
+        );
         sql::execute_statement(&pipe_name, "master", &statement, true)
             .await
             .map_err(sql_error)?;
@@ -349,9 +408,14 @@ impl McpServer {
     }
 
     #[tool(description = "Lista tabelas do banco (via INFORMATION_SCHEMA)")]
-    async fn db_list_tables(&self, Parameters(args): Parameters<ListTablesArgs>) -> Result<CallToolResult, McpError> {
+    async fn db_list_tables(
+        &self,
+        Parameters(args): Parameters<ListTablesArgs>,
+    ) -> Result<CallToolResult, McpError> {
         let instance = args.instance.unwrap_or_else(default_instance);
-        let pipe_name = localdb::ensure_running(&instance).await.map_err(localdb_error)?;
+        let pipe_name = localdb::ensure_running(&instance)
+            .await
+            .map_err(localdb_error)?;
 
         let sql_text = match &args.schema {
             Some(schema) => format!(

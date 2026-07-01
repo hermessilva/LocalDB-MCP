@@ -1,8 +1,8 @@
-node_modules/
-dist/
-out/
-*.vsix
-.DS_Store
-*.log
-.vscode-test/
+/target
+**/*.rs.bk
+*.pdb
+Cargo.lock.bak
 .vs/
+*.user
+*.log
+config.local.toml

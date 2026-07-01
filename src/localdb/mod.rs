@@ -163,10 +163,10 @@ pub async fn delete(name: &str) -> Result<()> {
 /// LocalDB já cobre a maioria dos casos, mas isso torna explícito).
 pub async fn ensure_running(name: &str) -> Result<String> {
     let current = info(name).await?;
-    if current.state.eq_ignore_ascii_case("running") {
-        if let Some(pipe) = current.pipe_name {
-            return Ok(pipe);
-        }
+    if current.state.eq_ignore_ascii_case("running")
+        && let Some(pipe) = current.pipe_name
+    {
+        return Ok(pipe);
     }
     start(name).await
 }

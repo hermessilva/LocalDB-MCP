@@ -30,7 +30,7 @@ The [`claude-plugin/`](claude-plugin/) directory in this repo is a self-containe
 claude --plugin-dir path\to\LocalDB-MCP\claude-plugin
 ```
 
-or install it from the [official Claude Code plugin marketplace](https://github.com/anthropics/claude-plugins-official) once listed there.
+Submitted to the [`claude-community` marketplace](https://github.com/anthropics/claude-plugins-community) for review — once approved, install it with `claude plugin marketplace add anthropics/claude-plugins-community` followed by `claude plugin install mssql-localdb-mcp@claude-community`.
 
 ### From source
 

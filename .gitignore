@@ -6,3 +6,4 @@ Cargo.lock.bak
 *.user
 *.log
 config.local.toml
+.claude/

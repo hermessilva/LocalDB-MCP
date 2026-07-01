@@ -58,15 +58,15 @@ impl Config {
         if let Ok(v) = std::env::var("MSSQL_LOCALDB_MCP_LOG_LEVEL") {
             self.log_level = v;
         }
-        if let Ok(v) = std::env::var("MSSQL_LOCALDB_MCP_DEFAULT_MAX_ROWS") {
-            if let Ok(n) = v.parse() {
-                self.default_max_rows = n;
-            }
+        if let Ok(v) = std::env::var("MSSQL_LOCALDB_MCP_DEFAULT_MAX_ROWS")
+            && let Ok(n) = v.parse()
+        {
+            self.default_max_rows = n;
         }
-        if let Ok(v) = std::env::var("MSSQL_LOCALDB_MCP_QUERY_TIMEOUT_SECS") {
-            if let Ok(n) = v.parse() {
-                self.default_query_timeout_secs = n;
-            }
+        if let Ok(v) = std::env::var("MSSQL_LOCALDB_MCP_QUERY_TIMEOUT_SECS")
+            && let Ok(n) = v.parse()
+        {
+            self.default_query_timeout_secs = n;
         }
     }
 }
